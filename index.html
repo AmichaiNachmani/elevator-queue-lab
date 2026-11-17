@@ -1,0 +1,927 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>body { margin: 0; }</style>
+</head>
+<body>
+<title>Elevator Queue Lab</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: three working panels (people | building | controller), stacking to one column on phones. */
+:root {
+  --bg: #eef1f4;
+  --surface: #ffffff;
+  --sunken: #f5f7f9;
+  --ink: #15202b;
+  --muted: #5b6877;
+  --line: #d6dde4;
+  --accent: #2456c4;
+  --accent-soft: #dfe8fb;
+  --wait: #b26a00;
+  --wait-soft: #fbefd9;
+  --ok: #217a4d;
+  --ok-soft: #dcf1e5;
+  --car: #33414f;
+  --car-ink: #ffffff;
+  --shabbat: #8a5a00;
+  --shabbat-soft: #f8ecd2;
+  --danger: #b4232f;
+  --font-display: "Archivo", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Inter", "Segoe UI", system-ui, sans-serif;
+  --font-data: "JetBrains Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1318; --surface: #151c23; --sunken: #111820; --ink: #e5ebf1; --muted: #8e9cab; --line: #26313c;
+    --accent: #79a6ff; --accent-soft: #1b2a45; --wait: #f2b544; --wait-soft: #3a2c12; --ok: #5ccf92; --ok-soft: #123222;
+    --car: #a9b7c6; --car-ink: #0e1318; --shabbat: #f0c062; --shabbat-soft: #352a12; --danger: #ff7b86;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1318; --surface: #151c23; --sunken: #111820; --ink: #e5ebf1; --muted: #8e9cab; --line: #26313c;
+  --accent: #79a6ff; --accent-soft: #1b2a45; --wait: #f2b544; --wait-soft: #3a2c12; --ok: #5ccf92; --ok-soft: #123222;
+  --car: #a9b7c6; --car-ink: #0e1318; --shabbat: #f0c062; --shabbat-soft: #352a12; --danger: #ff7b86;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font: 14px/1.45 var(--font-body);
+  padding-block: 16px 32px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+h1, h2, h3 { font-family: var(--font-display); margin: 0; text-wrap: balance; }
+h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 15px; font-weight: 600; }
+h3 { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-top: 14px; margin-bottom: 6px; }
+button, select, input { font: inherit; color: inherit; }
+button { cursor: pointer; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); padding: 5px 10px; }
+button:hover:not(:disabled) { border-color: var(--accent); }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--surface); font-weight: 600; }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+select, input { border: 1px solid var(--line); background: var(--surface); border-radius: 6px; padding: 5px 7px; min-width: 0; }
+.muted { color: var(--muted); }
+.mono { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+[hidden] { display: none !important; }
+
+.top { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; margin-bottom: 14px; }
+.top .brand { display: flex; flex-direction: column; gap: 2px; margin-right: auto; min-width: 0; }
+.top .brand p { margin: 0; color: var(--muted); font-size: 13px; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--surface); }
+.seg button { border: 0; border-radius: 0; padding: 6px 12px; background: transparent; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.seg.mode button[data-mode="shabbat"][aria-pressed="true"] { background: var(--shabbat-soft); color: var(--shabbat); }
+
+.lab { display: grid; grid-template-columns: minmax(240px, 290px) minmax(320px, 1fr) minmax(300px, 400px); gap: 14px; align-items: start; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; min-width: 0; }
+@media (max-width: 1150px) {
+  .lab { grid-template-columns: minmax(240px, 290px) minmax(0, 1fr); }
+  .lab .controller { grid-column: 1 / -1; }
+}
+@media (max-width: 720px) {
+  .lab { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* People */
+.people-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; max-height: 460px; overflow-y: auto; }
+.person { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px; align-items: center; padding: 6px 8px; border-radius: 8px; border: 1px solid transparent; }
+.person:hover { border-color: var(--line); }
+.person.draggable { cursor: grab; touch-action: none; user-select: none; }
+.person .who { min-width: 0; display: flex; flex-direction: column; }
+.person .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.person .state { font-size: 12px; color: var(--muted); }
+.person .state.waiting { color: var(--wait); }
+.person .state.riding { color: var(--accent); }
+.person select { padding: 2px 4px; font-size: 12px; }
+.icon-btn { border: 0; background: transparent; padding: 2px 6px; color: var(--muted); font-size: 16px; line-height: 1; }
+.icon-btn:hover { color: var(--danger); }
+.add-person { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px; margin-top: 10px; }
+.hint { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
+.examples-note { font-size: 12px; color: var(--wait); margin: 6px 0 0; }
+.row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+
+/* Building */
+.building-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.floors { position: relative; margin-top: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--sunken); overflow: hidden; }
+.floor-row { display: grid; grid-template-columns: 46px 74px minmax(0, 1fr); align-items: center; border-bottom: 1px dashed var(--line); }
+.floor-row:last-child { border-bottom: 0; }
+.fl-num { font-family: var(--font-data); font-weight: 700; text-align: center; color: var(--muted); }
+.fl-num small { font-weight: 500; font-size: 10px; margin-left: 2px; }
+.fl-shaft { height: 100%; border-left: 1px solid var(--line); border-right: 1px solid var(--line); background: var(--surface); position: relative; }
+.fl-landing { display: flex; flex-wrap: wrap; gap: 4px; padding: 3px 8px; align-items: center; min-width: 0; }
+.floor-row.pending .fl-num { color: var(--accent); }
+.floor-row.pending .fl-num::after { content: "●"; font-size: 9px; margin-left: 3px; vertical-align: middle; }
+.floor-row.target .fl-shaft { background: var(--accent-soft); }
+.floor-row.held .fl-num { text-decoration: underline dotted; }
+.floor-row.drop { background: var(--accent-soft); outline: 2px dashed var(--accent); outline-offset: -2px; }
+.chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 1px 4px 1px 8px; border-radius: 12px; background: var(--wait-soft); color: var(--wait); font-weight: 500; white-space: nowrap; max-width: 100%; }
+.chip bdi { overflow: hidden; text-overflow: ellipsis; }
+.chip button { border: 0; background: transparent; padding: 0 4px; color: inherit; font-size: 13px; line-height: 1; }
+.car { position: absolute; left: 51px; width: 64px; border-radius: 5px; background: var(--car); color: var(--car-ink); display: flex; align-items: center; justify-content: center; gap: 4px; font-family: var(--font-data); font-weight: 700; font-size: 13px; pointer-events: none; }
+.car.open { background: var(--ok); color: var(--surface); }
+.car .riders { font-weight: 500; font-size: 11px; opacity: 0.9; }
+.shabbat-on .car:not(.open) { background: var(--shabbat); color: var(--surface); }
+.keypad { display: grid; grid-template-columns: repeat(auto-fill, minmax(42px, 1fr)); gap: 5px; }
+.keypad button { font-family: var(--font-data); font-weight: 700; padding: 7px 0; }
+.keypad button.pending { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.place-form { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.place-form select#place-who { max-width: 170px; }
+
+/* Controller */
+.car-status { display: flex; align-items: center; gap: 14px; }
+.display { font-family: var(--font-data); font-size: 44px; font-weight: 700; line-height: 1; min-width: 2.2ch; font-variant-numeric: tabular-nums; }
+.car-status .state { display: flex; flex-direction: column; gap: 3px; }
+.pill { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 10px; border: 1px solid currentColor; }
+.pill.shabbat { color: var(--shabbat); }
+.pill.normal { color: var(--muted); }
+.pill.sent { color: var(--ok); }
+.pill.when { color: var(--wait); }
+.next-push { margin-top: 12px; padding: 9px 10px; border-radius: 8px; border: 1px solid var(--line); border-left: 4px solid var(--accent); background: var(--sunken); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13px; }
+.next-push b { font-family: var(--font-data); font-size: 15px; }
+.plan { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; font-size: 13px; }
+.plan li { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 4px 6px; border-radius: 6px; }
+.plan li.current { background: var(--accent-soft); }
+.plan li.pass2 { color: var(--muted); }
+.plan li.turn { color: var(--shabbat); font-size: 12px; padding: 2px 6px; }
+.plan .n { font-family: var(--font-data); font-size: 11px; min-width: 20px; text-align: center; border: 1px solid var(--line); border-radius: 9px; color: var(--muted); }
+.plan .fl { font-family: var(--font-data); font-weight: 700; color: var(--ink); }
+.plan .pick { color: var(--wait); font-size: 12px; white-space: nowrap; }
+.plan .drop-off { color: var(--ok); font-size: 12px; white-space: nowrap; }
+.log { list-style: none; margin: 0; padding: 0; font-size: 12px; display: grid; gap: 1px; max-height: 240px; overflow-y: auto; }
+.log li { padding: 4px 0; border-bottom: 1px solid var(--line); }
+.log .t { font-family: var(--font-data); color: var(--muted); margin-right: 4px; }
+.log .q { font-family: var(--font-data); color: var(--muted); }
+.by { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; padding: 0 5px; border-radius: 4px; margin-right: 4px; }
+.by.by-car { background: var(--sunken); color: var(--muted); border: 1px solid var(--line); }
+.by.by-controller { background: var(--accent-soft); color: var(--accent); }
+.riding-list { display: flex; flex-wrap: wrap; gap: 4px; }
+.riding-list .chip { background: var(--accent-soft); color: var(--accent); padding-right: 8px; }
+
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: 13px; max-width: calc(100% - 32px); z-index: 30; }
+.ghost { position: fixed; z-index: 40; pointer-events: none; padding: 3px 10px; border-radius: 12px; background: var(--accent); color: var(--surface); font-weight: 600; font-size: 13px; }
+body.dragging, body.dragging * { cursor: grabbing !important; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<header class="top">
+  <div class="brand">
+    <h1>Elevator Queue Lab</h1>
+    <p>Place people waiting at floors and watch how the controller orders its queue and picks the car's next floor.</p>
+  </div>
+  <div class="controls">
+    <div class="seg mode" role="group" aria-label="Elevator mode">
+      <button type="button" data-mode="normal" aria-pressed="true">Normal</button>
+      <button type="button" data-mode="shabbat" aria-pressed="false">Shabbat</button>
+    </div>
+    <div class="seg speed" role="group" aria-label="Simulation speed">
+      <button type="button" data-speed="1" aria-pressed="true">×1</button>
+      <button type="button" data-speed="2" aria-pressed="false">×2</button>
+      <button type="button" data-speed="4" aria-pressed="false">×4</button>
+    </div>
+    <button type="button" id="pause">Pause</button>
+    <label class="muted">Top floor <select id="top-floor"></select></label>
+    <button type="button" id="reset">Reset simulation</button>
+  </div>
+</header>
+
+<main class="lab" id="lab">
+  <section class="panel people" aria-labelledby="people-title">
+    <h2 id="people-title">People <span class="muted" id="people-count"></span></h2>
+    <p class="hint">Each person has a destination floor. Drag a name onto a floor in the building to place them waiting there.</p>
+    <p class="examples-note" id="examples-note" hidden>Example people. Edit or delete them; your list is saved in this browser.</p>
+    <ul class="people-list" id="people-list"></ul>
+    <form class="add-person" id="add-person">
+      <input id="new-name" placeholder="Name" maxlength="40" required aria-label="Name">
+      <select id="new-floor" aria-label="Destination floor"></select>
+      <button type="submit" class="primary">Add</button>
+    </form>
+  </section>
+
+  <section class="panel building" aria-labelledby="building-title">
+    <div class="building-head">
+      <h2 id="building-title">Building</h2>
+      <span class="muted mono" id="clock">t = 0.0 s</span>
+    </div>
+    <div class="floors" id="floors">
+      <div class="car" id="car"><span id="car-floor">0</span><span class="riders" id="car-riders"></span></div>
+    </div>
+    <h3>Place someone waiting</h3>
+    <form class="place-form" id="place-form">
+      <select id="place-who" aria-label="Person"></select>
+      <label>at floor <select id="place-floor"></select></label>
+      <button type="submit" class="primary">Place</button>
+      <button type="button" id="random5" title="Place up to 5 people who are not already waiting or riding, at random floors">+5 random</button>
+      <button type="button" id="clear-waiting">Clear people</button>
+    </form>
+    <p class="hint">As with a camera sighting, only the person and the floor are given. The destination is their own floor, or the entrance when they wait on their own floor. They board when the doors open there.</p>
+    <h3>Keypad <span id="keypad-note"></span></h3>
+    <div class="keypad" id="keypad"></div>
+  </section>
+
+  <section class="panel controller" aria-labelledby="controller-title">
+    <h2 id="controller-title" hidden>Controller</h2>
+    <div class="car-status">
+      <div class="display" id="display">0</div>
+      <div class="state">
+        <span id="state-text">Idle</span>
+        <span><span class="pill normal" id="mode-pill">Normal mode</span></span>
+      </div>
+    </div>
+    <div class="next-push" id="next-push"></div>
+    <h3>Controller queue <span id="queue-head" class="mono"></span></h3>
+    <ul class="plan" id="plan"></ul>
+    <h3>In the car</h3>
+    <div class="riding-list" id="riding"></div>
+    <h3>How each next floor was chosen</h3>
+    <ul class="log" id="decisions"></ul>
+    <h3>Activity</h3>
+    <ul class="log" id="activity"></ul>
+  </section>
+</main>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+"use strict";
+/* Port of app/elevator/simulator.py (SimulatedElevator) and the passenger parts of
+   app/elevator/dispatcher.py (ElevatorDispatcher). Times are simulated seconds. */
+
+const EPS = 1e-6;
+const ARROW = { up: "▲", down: "▼" };
+const DIR_NAME = { 1: "up", "-1": "down" };
+const dirName = (d) => DIR_NAME[d] ?? null;
+const pyRound = (x) => {  // Python's round(): halves go to the even neighbour
+  const r = Math.round(x);
+  return Math.abs(x % 1) === 0.5 && r % 2 !== 0 ? r - 1 : r;
+};
+
+class Elevator {
+  constructor(cfg, shabbat) {
+    this.cfg = cfg;
+    this.position = cfg.entrance;
+    this.pending = new Set();
+    this.direction = 0;
+    this.target = null;
+    this.nextMove = null;  // Shabbat: [floor, direction] sent while the doors are open; taken when they close
+    this.doorsOpenUntil = null;
+    this.shabbat = shabbat;
+    this.commands = [];
+    this.decisions = [];
+    this.selectReason = "";
+    this.now = 0;
+    this.lastStep = 0;
+    this.onStop = () => {};
+    this.onDoorsClosed = () => {};
+  }
+
+  // ---- controller API
+  requestFloor(floor) {
+    this.checkFloor(floor);
+    if (this.pending.has(floor)) return false;
+    if (this.shabbat && this.doorsOpenAt(floor)) { this.onStop(floor); return true; }  // standing here with open doors
+    this.pending.add(floor);
+    return true;
+  }
+  get currentFloor() { return pyRound(this.position); }
+  get doorsOpenFloor() { return this.doorsOpenUntil !== null ? pyRound(this.position) : null; }
+  setShabbat(enabled) {
+    if (this.shabbat === enabled) return;
+    this.shabbat = enabled;
+    this.commands = [];
+    this.nextMove = null;
+    // Back to normal: finish the current move only if someone asked for that floor.
+    if (!enabled && this.doorsOpenUntil === null && this.target !== null && !this.pending.has(this.target)) {
+      this.pending.add(this.target);
+    }
+  }
+  status() {
+    const direction = this.travelDirection();
+    const sorted = (xs) => [...xs].sort((a, b) => a - b);
+    return {
+      mode: this.shabbat ? "shabbat" : "normal",
+      currentFloor: pyRound(this.position),
+      position: this.position,
+      state: this.state(),
+      direction: dirName(direction),
+      target: this.target,
+      pending: sorted(this.pending),
+      held: this.shabbat ? sorted([...this.pending].filter((f) => !this.reachable(f, direction))) : [],
+      plan: this.plan(),
+      nextPush: this.nextPush(),
+      decisions: [...this.decisions].reverse(),
+    };
+  }
+
+  // ---- simulation
+  step(now) {
+    this.now = now;
+    const dt = Math.max(0, now - this.lastStep);
+    this.lastStep = now;
+    if (this.doorsOpenUntil !== null) {
+      if (now < this.doorsOpenUntil) {
+        if (this.shabbat) this.controllerUpdate();  // doors open: the only time the controller may send
+        return;
+      }
+      this.doorsOpenUntil = null;
+      this.onDoorsClosed(pyRound(this.position));
+    }
+    if (this.shabbat) {
+      if (this.target === null) {
+        if (this.nextMove) {  // sent by the controller while the doors were open
+          [this.target, this.direction] = this.nextMove;
+          this.nextMove = null;
+        } else {
+          this.target = this.nextSweepFloor();  // the car decides on its own
+          if (this.target !== null) this.decide("car", this.target, `sweep: next floor ${this.target > this.position ? "up" : "down"}`);
+        }
+      }
+      if (this.target === null) return;
+    } else {
+      const previous = this.target;
+      this.target = this.selectTarget();
+      if (this.target === null) return;
+      if (this.target !== previous) this.decide("controller", this.target, this.selectReason);
+    }
+    const distance = this.target - this.position;
+    const travel = dt / this.cfg.secondsPerFloor;
+    if (Math.abs(distance) <= travel + EPS) {
+      const arrived = this.target;
+      this.arrive(arrived, now);
+      this.onStop(arrived);
+    } else {
+      this.position += distance > 0 ? travel : -travel;
+    }
+  }
+
+  // Normal mode (SCAN): nearest request ahead in the current direction, else reverse.
+  selectTarget() {
+    const [floor, direction, reason] = this.choose(this.direction);
+    this.direction = direction;
+    this.selectReason = reason;
+    return floor;
+  }
+  choose(direction) {
+    const pos = this.position;
+    const pending = [...this.pending];
+    const here = pending.filter((f) => Math.abs(f - pos) <= EPS);
+    if (here.length) return [here[0], direction, "request at the car's floor"];
+    const above = pending.filter((f) => f > pos);
+    const below = pending.filter((f) => f < pos);
+    const idle = direction === 0;
+    if (direction >= 0 && above.length) return [Math.min(...above), 1, idle ? "idle: nearest request, going up" : "nearest request ahead (up)"];
+    if (direction <= 0 && below.length) return [Math.max(...below), -1, idle ? "idle: nearest request, going down" : "nearest request ahead (down)"];
+    if (above.length) return [Math.min(...above), 1, "nothing left below: reversing up"];
+    if (below.length) return [Math.max(...below), -1, "nothing left above: reversing down"];
+    return [null, 0, ""];
+  }
+
+  // The next floor the controller pushes to the car, and whether it is already the car's target.
+  nextPush() {
+    const moving = this.doorsOpenUntil === null && this.target !== null;
+    const pos = this.position;
+    if (!this.shabbat) {
+      if (moving) {
+        const d = this.target > pos ? 1 : -1;
+        return { floor: this.target, direction: dirName(d), sent: true, when: "car target", reason: this.selectReason };
+      }
+      const [floor, d, reason] = this.choose(this.direction);
+      if (floor === null) return null;
+      const when = this.doorsOpenUntil !== null ? "when the doors close" : "now";
+      return { floor, direction: dirName(d), sent: false, when, reason };
+    }
+    // Shabbat: the controller pushes only while the doors are open.
+    if (moving) {
+      const d = this.target > pos ? 1 : -1;
+      return { floor: this.target, direction: dirName(d), sent: true, when: "car target", reason: "the car's current target (nothing is sent while the car moves)" };
+    }
+    const doorsOpen = this.doorsOpenUntil !== null;
+    if (doorsOpen && this.nextMove) {
+      const last = this.commands[this.commands.length - 1];
+      return { floor: this.nextMove[0], direction: dirName(this.nextMove[1]), sent: true, when: "when the doors close", reason: last ? last.reason : "" };
+    }
+    const step = this.sweepFrom(pyRound(pos), this.direction);
+    if (!step) return null;
+    const [nextFloor, d] = step;
+    const ext = this.extension(nextFloor, d);
+    if (ext) return { floor: ext[0], direction: dirName(d), sent: false, when: doorsOpen ? "next step" : "when the doors open", reason: ext[1] };
+    return { floor: nextFloor, direction: dirName(d), sent: false, when: "car decides", reason: "nothing to push: the car moves on to the next floor by itself" };
+  }
+
+  // Queued floors in service order. Pass 1: floors the car can still stop at in its current direction,
+  // nearest first (Shabbat: only at or beyond its target). Pass 2: the rest, after the car turns.
+  plan() {
+    if (!this.pending.size) return [];
+    const pos = this.position;
+    const pending = [...this.pending];
+    let direction = this.travelDirection();
+    if (direction === 0) direction = pending.some((f) => f > pos) || !pending.some((f) => f < pos) ? 1 : -1;
+    const first = this.shabbat
+      ? pending.filter((f) => this.reachable(f, direction))
+      : pending.filter((f) => (f - pos) * direction >= -EPS);
+    const rest = pending.filter((f) => !first.includes(f));
+    first.sort((a, b) => Math.abs(a - pos) - Math.abs(b - pos));
+    rest.sort((a, b) => -a * direction - -b * direction);
+    return [
+      ...first.map((floor) => ({ floor, pass: 1, direction: dirName(direction) })),
+      ...rest.map((floor) => ({ floor, pass: 2, direction: dirName(-direction) })),
+    ];
+  }
+
+  decide(by, picked, reason) {
+    const d = picked > this.position ? 1 : picked < this.position ? -1 : 0;
+    this.decisions.push({ t: this.now, by, picked, reason, position: this.position, direction: dirName(d), queue: this.plan().map((s) => s.floor) });
+    if (this.decisions.length > 20) this.decisions.shift();
+  }
+
+  // Shabbat: the car's own sweep.
+  nextSweepFloor() {
+    const step = this.sweepFrom(pyRound(this.position), this.direction);
+    if (!step) return null;
+    this.direction = step[1];
+    return step[0];
+  }
+  sweepFrom(floor, direction) {
+    const { minFloor: low, maxFloor: high } = this.cfg;
+    if (low === high) return null;
+    direction = direction || 1;
+    if (floor >= high) direction = -1;
+    else if (floor <= low) direction = 1;
+    return [floor + direction, direction];
+  }
+
+  // Shabbat, doors open: send the car's next move, extending its own sweep step (never reversing it). The car
+  // takes it when the doors close; it is sent again if the queue changes it while they are still open.
+  controllerUpdate() {
+    const step = this.sweepFrom(pyRound(this.position), this.direction);
+    if (!step) return;
+    const [sweepFloor, direction] = step;
+    const ext = this.extension(sweepFloor, direction);
+    let best;
+    let reason;
+    if (ext) [best, reason] = ext;
+    else if (this.nextMove) [best, reason] = [sweepFloor, "queued floor is the next floor"];  // undo an earlier extension
+    else return;
+    if (this.nextMove && this.nextMove[0] === best && this.nextMove[1] === direction) return;
+    const from = this.nextMove ? this.nextMove[0] : sweepFloor;
+    this.commands.push({ t: this.now, from, to: best, direction: dirName(direction), reason });
+    this.nextMove = [best, direction];
+    this.decide("controller", best, `sent with doors open, instead of ${from}: ${reason}`);
+  }
+  // A queued floor at or beyond the target -> the nearest one; otherwise, if floors are queued behind the car,
+  // the end of the shaft so the car turns sooner.
+  extension(target, direction) {
+    const pending = [...this.pending];
+    const reachable = pending.filter((f) => this.isAhead(f, direction) && (f - target) * direction >= 0);
+    let best;
+    let reason;
+    if (reachable.length) {
+      best = reachable.reduce((a, b) => (Math.abs(b - this.position) < Math.abs(a - this.position) ? b : a));
+      reason = "queued floor ahead";
+    } else if (pending.length) {
+      best = direction > 0 ? this.cfg.maxFloor : this.cfg.minFloor;
+      reason = "queued floors behind: run to the end to turn sooner";
+    } else {
+      return null;
+    }
+    if (best === target || (best - target) * direction < 0) return null;  // nothing to do, or it would shorten the move
+    return [best, reason];
+  }
+  reachable(floor, direction) {
+    if (!this.isAhead(floor, direction)) return false;
+    return this.target === null || (floor - this.target) * direction >= 0;
+  }
+
+  arrive(floor, now) {
+    this.position = floor;
+    this.pending.delete(floor);
+    this.target = null;
+    this.doorsOpenUntil = now + this.dwell();
+    if (!this.pending.size && !this.shabbat) this.direction = 0;
+    if (this.shabbat) this.controllerUpdate();  // the doors just opened: the controller may send the next move
+  }
+  dwell() { return this.shabbat ? this.cfg.shabbatStopSeconds : this.cfg.doorOpenSeconds; }
+  doorsOpenAt(floor) { return this.doorsOpenUntil !== null && Math.abs(this.position - floor) <= EPS; }
+  travelDirection() {
+    if (this.target !== null && Math.abs(this.target - this.position) > EPS) return this.target > this.position ? 1 : -1;
+    return this.direction;
+  }
+  isAhead(floor, direction) { return direction !== 0 && (floor - this.position) * direction > EPS; }
+  checkFloor(floor) {
+    if (!(floor >= this.cfg.minFloor && floor <= this.cfg.maxFloor)) throw new Error(`Floor must be between ${this.cfg.minFloor} and ${this.cfg.maxFloor}.`);
+  }
+  state() {
+    if (this.doorsOpenUntil !== null) return "doors_open";
+    if (this.target === null) return "idle";
+    return this.target > this.position ? "moving_up" : "moving_down";
+  }
+}
+
+function chooseDestination(personFloor, originFloor, entranceFloor) {
+  if (originFloor === personFloor) return [entranceFloor, `at floor ${personFloor} (their floor); going to entrance`];
+  return [personFloor, "person's destination floor"];
+}
+
+/* Passengers: people placed waiting by hand board when the doors open at their floor
+   and get out at their destination (dispatcher.add_simulated / _on_stop). */
+class Dispatcher {
+  constructor(elevator, people, log) {
+    this.elevator = elevator;
+    this.people = people;  // () => array of {id, name, floor}
+    this.log = log;
+    this.where = new Map();  // id -> {state: waiting|riding|at_floor, floor, destination}
+    elevator.onStop = (floor) => this.handleStop(floor);
+    elevator.onDoorsClosed = () => {};
+  }
+  person(id) { return this.people().find((p) => p.id === id); }
+  addWaiting(floor, personId) {
+    const cfg = this.elevator.cfg;
+    this.elevator.checkFloor(floor);
+    const person = this.person(personId);
+    if (!person) throw new Error("That person is no longer in the list.");
+    if (person.floor < cfg.minFloor || person.floor > cfg.maxFloor) throw new Error(`${person.name}'s floor ${person.floor} is outside this building (0 to ${cfg.maxFloor}).`);
+    const [destination] = chooseDestination(person.floor, floor, cfg.entrance);
+    if (destination === floor) throw new Error(`${person.name} is already at their destination floor ${floor}.`);
+    const current = this.where.get(person.id);
+    if (current && (current.state === "waiting" || current.state === "riding")) throw new Error(`${person.name} is already ${current.state}.`);
+    this.where.set(person.id, { state: "waiting", floor, destination });
+    this.log(`<bdi>${esc(person.name)}</bdi> waiting at <b>${floor}</b> → ${destination}`);
+    if (this.elevator.doorsOpenFloor === floor) this.handleStop(floor);  // doors already open here: board now
+    else this.elevator.requestFloor(floor);
+  }
+  cancel(personId) {
+    const w = this.where.get(personId);
+    if (w && w.state === "waiting") { this.where.delete(personId); this.log(`<bdi>${esc(this.name(personId))}</bdi> left floor ${w.floor}`); }
+  }
+  clear() {
+    const n = [...this.where.values()].filter((w) => w.state !== "at_floor").length;
+    this.where.clear();
+    return n;
+  }
+  handleStop(floor) {
+    const boarding = [];
+    for (const [id, w] of this.where) {
+      if (w.state === "riding" && w.destination === floor) {
+        this.where.set(id, { state: "at_floor", floor, destination: null });
+        this.log(`<bdi>${esc(this.name(id))}</bdi> got out at <b>${floor}</b>`);
+      } else if (w.state === "waiting" && w.floor === floor) {
+        this.where.set(id, { state: "riding", floor: null, destination: w.destination });
+        boarding.push([id, w.destination]);
+      }
+    }
+    for (const [id, destination] of boarding) {
+      this.log(`<bdi>${esc(this.name(id))}</bdi> boarded at <b>${floor}</b> → ${destination}`);
+      this.elevator.requestFloor(destination);
+    }
+  }
+  name(id) { const p = this.person(id); return p ? p.name : "Removed person"; }
+  passengers() {
+    return [...this.where].filter(([, w]) => w.state !== "at_floor").map(([id, w]) => ({ id, name: this.name(id), ...w }));
+  }
+  annotatedPlan(plan) {
+    const ps = this.passengers();
+    return plan.map((step) => ({
+      ...step,
+      pickups: ps.filter((p) => p.state === "waiting" && p.floor === step.floor),
+      dropoffs: ps.filter((p) => p.state === "riding" && p.destination === step.floor),
+    }));
+  }
+}
+
+/* ---------------------------------------------------------------- storage */
+const STORE_KEY = "elevator-queue-lab:v1";
+const EXAMPLES = [
+  ["Dana", 6], ["Yossi", 8], ["Miriam", 3], ["Avi", 10], ["Noa", 2], ["Eitan", 5], ["Shira", 9], ["Omer", 4],
+];
+const newId = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2));
+function load() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (raw) {
+      const data = JSON.parse(raw);
+      if (Array.isArray(data.people)) return { people: data.people, topFloor: data.topFloor || 10, shabbat: !!data.shabbat, examples: false };
+    }
+  } catch (e) { /* storage unavailable: use examples */ }
+  return { people: EXAMPLES.map(([name, floor]) => ({ id: newId(), name, floor })), topFloor: 10, shabbat: false, examples: true };
+}
+const app = load();
+function save() {
+  app.examples = false;
+  try { localStorage.setItem(STORE_KEY, JSON.stringify({ people: app.people, topFloor: app.topFloor, shabbat: app.shabbat })); } catch (e) { /* not saved */ }
+}
+
+/* ---------------------------------------------------------------- simulation wiring */
+const $ = (s) => document.querySelector(s);
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+let sim, dispatcher, simTime, speed = 1, paused = false, activity = [];
+const cfg = () => ({ minFloor: 0, maxFloor: app.topFloor, entrance: 0, secondsPerFloor: 1.5, doorOpenSeconds: 3, shabbatStopSeconds: 3 });
+const fmtT = (t) => `${t.toFixed(1)}s`;
+function logActivity(html) {
+  activity.unshift({ t: simTime, html });
+  if (activity.length > 40) activity.pop();
+}
+function resetSim() {
+  simTime = 0;
+  activity = [];
+  sim = new Elevator(cfg(), app.shabbat);
+  dispatcher = new Dispatcher(sim, () => app.people, logActivity);
+  buildFloors();
+  buildSelectors();
+}
+
+let toastTimer;
+function toast(message) {
+  const el = $("#toast");
+  el.textContent = message;
+  el.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => (el.hidden = true), 3500);
+}
+function attempt(fn) { try { fn(); } catch (e) { toast(e.message); } }
+
+/* ---------------------------------------------------------------- building view */
+let ROW = 38;
+function floorsList() { const out = []; for (let f = app.topFloor; f >= 0; f--) out.push(f); return out; }
+function buildFloors() {
+  const floors = floorsList();
+  ROW = Math.max(28, Math.min(42, Math.floor(480 / floors.length)));
+  const box = $("#floors");
+  box.querySelectorAll(".floor-row").forEach((r) => r.remove());
+  const car = $("#car");
+  for (const f of floors) {
+    const row = document.createElement("div");
+    row.className = "floor-row";
+    row.dataset.floor = f;
+    row.style.height = `${ROW}px`;
+    row.innerHTML = `<div class="fl-num">${f}${f === 0 ? "<small>E</small>" : ""}</div><div class="fl-shaft"></div><div class="fl-landing"></div>`;
+    box.insertBefore(row, car);
+  }
+  car.style.height = `${ROW - 8}px`;
+  $("#keypad").innerHTML = floors.slice().reverse().map((f) => `<button type="button" data-floor="${f}">${f}</button>`).join("");
+}
+function buildSelectors() {
+  const floors = floorsList().reverse();
+  const opts = floors.map((f) => `<option value="${f}">${f}${f === 0 ? " (entrance)" : ""}</option>`).join("");
+  $("#place-floor").innerHTML = opts;
+  const nf = $("#new-floor");
+  const keep = nf.value;
+  nf.innerHTML = floors.map((f) => `<option value="${f}">Floor ${f}</option>`).join("");
+  nf.value = keep && Number(keep) <= app.topFloor ? keep : "1";
+  $("#top-floor").innerHTML = [5, 6, 7, 8, 9, 10, 12, 15, 20].map((n) => `<option value="${n}">${n}</option>`).join("");
+  $("#top-floor").value = String(app.topFloor);
+}
+
+/* ---------------------------------------------------------------- rendering */
+const STATE_TEXT = { idle: "Idle", moving_up: "Moving up", moving_down: "Moving down", doors_open: "Doors open" };
+const setHTML = (el, html) => { if (el._html !== html) { el.innerHTML = html; el._html = html; } };
+
+function renderPeople() {
+  const where = dispatcher.where;
+  $("#people-count").textContent = `(${app.people.length})`;
+  $("#examples-note").hidden = !app.examples;
+  if (dragging) return;  // replacing the list would cancel the drag
+  const floorOpts = (sel) => floorsList().reverse().map((f) => `<option value="${f}" ${f === sel ? "selected" : ""}>${f}</option>`).join("")
+    + (sel > app.topFloor ? `<option value="${sel}" selected>${sel}?</option>` : "");
+  const html = app.people.map((p) => {
+    const w = where.get(p.id);
+    const busy = w && (w.state === "waiting" || w.state === "riding");
+    const state = !w ? "" : w.state === "waiting" ? `Waiting at ${w.floor} → ${w.destination}` : w.state === "riding" ? `In the car → ${w.destination}` : `At floor ${w.floor}`;
+    return `<li class="person ${busy ? "" : "draggable"}" ${busy ? "" : `data-person="${esc(p.id)}" title="Drag onto a floor to place ${esc(p.name)} waiting there"`}>
+      <div class="who"><span class="name"><bdi>${esc(p.name)}</bdi></span><span class="state ${w ? w.state : ""}">${esc(state) || "&nbsp;"}</span></div>
+      <select data-edit="${esc(p.id)}" aria-label="Destination floor of ${esc(p.name)}" title="Destination floor">${floorOpts(p.floor)}</select>
+      <button type="button" class="icon-btn" data-delete="${esc(p.id)}" aria-label="Delete ${esc(p.name)}" title="Delete">×</button>
+    </li>`;
+  }).join("") || `<li class="muted">No people yet. Add someone below.</li>`;
+  const list = $("#people-list");
+  if (list._html !== html && !list.contains(document.activeElement)) { list.innerHTML = html; list._html = html; }
+  const who = $("#place-who");
+  const free = app.people.filter((p) => { const w = where.get(p.id); return !w || w.state === "at_floor"; });
+  const optHtml = free.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("") || `<option value="">Everyone is waiting or riding</option>`;
+  if (who._html !== optHtml && document.activeElement !== who) { const v = who.value; who.innerHTML = optHtml; who._html = optHtml; if (free.some((p) => p.id === v)) who.value = v; }
+}
+
+function renderBuilding(s) {
+  const lab = $("#lab");
+  lab.classList.toggle("shabbat-on", s.mode === "shabbat");
+  const car = $("#car");
+  car.style.top = `${(app.topFloor - s.position) * ROW + 4}px`;
+  car.classList.toggle("open", s.state === "doors_open");
+  $("#car-floor").textContent = s.currentFloor;
+  const riders = dispatcher.passengers().filter((p) => p.state === "riding");
+  $("#car-riders").textContent = riders.length ? `·${riders.length}` : "";
+  $("#clock").textContent = `t = ${simTime.toFixed(1)} s${paused ? " (paused)" : ""}`;
+}
+
+function renderPanels(s) {
+  const waiting = dispatcher.passengers().filter((p) => p.state === "waiting");
+  document.querySelectorAll(".floor-row").forEach((row) => {
+    const f = Number(row.dataset.floor);
+    row.classList.toggle("pending", s.pending.includes(f));
+    row.classList.toggle("target", s.target === f && s.state !== "doors_open");
+    row.classList.toggle("held", s.held.includes(f));
+    const here = waiting.filter((p) => p.floor === f);
+    setHTML(row.querySelector(".fl-landing"), here.map((p) =>
+      `<span class="chip" title="Waiting, going to ${p.destination}"><bdi>${esc(p.name)}</bdi> → ${p.destination}<button type="button" data-cancel="${esc(p.id)}" aria-label="Remove ${esc(p.name)} from floor ${f}">×</button></span>`).join(""));
+  });
+  const shabbat = s.mode === "shabbat";
+  document.querySelectorAll("#keypad button").forEach((b) => {
+    b.disabled = shabbat;
+    b.classList.toggle("pending", s.pending.includes(Number(b.dataset.floor)));
+  });
+  $("#keypad-note").textContent = shabbat ? "(not used in Shabbat mode)" : "";
+
+  // controller column
+  $("#display").textContent = `${s.currentFloor}${s.state === "moving_up" ? "▲" : s.state === "moving_down" ? "▼" : ""}`;
+  const modeText = shabbat ? `stops every floor (${sim.cfg.shabbatStopSeconds} s)` : "";
+  $("#state-text").textContent = `${STATE_TEXT[s.state]}${modeText ? " · " + modeText : ""}`;
+  const pill = $("#mode-pill");
+  pill.className = `pill ${s.mode}`;
+  pill.textContent = shabbat ? "Shabbat mode" : "Normal mode";
+
+  const p = s.nextPush;
+  const arrow = p && p.direction ? ARROW[p.direction] : "";
+  setHTML($("#next-push"), !p ? `<span class="muted">Nothing to push to the car.</span>`
+    : p.sent && p.when === "when the doors close" ? `Sent to the car: <b>${p.floor} ${arrow}</b> <span class="pill sent">pushed</span> <span class="muted">taken when the doors close · ${esc(p.reason)}</span>`
+    : p.sent ? `Car target <b>${p.floor} ${arrow}</b> <span class="pill sent">pushed</span> <span class="muted">${esc(p.reason)}</span>`
+    : p.when === "car decides" ? `The car goes on to <b>${p.floor} ${arrow}</b> by itself <span class="muted">· nothing to push</span>`
+    : `Next push to the car: <b>${p.floor} ${arrow}</b> <span class="pill when">${esc(p.when)}</span> <span class="muted">${esc(p.reason)}</span>`);
+
+  const moving = s.state === "moving_up" || s.state === "moving_down";
+  $("#queue-head").textContent = s.plan.length ? `· car at ${s.position.toFixed(1)} ${s.direction ? ARROW[s.direction] : "(idle)"}` : "";
+  const plan = dispatcher.annotatedPlan(s.plan);
+  const items = [];
+  plan.forEach((step, i) => {
+    if (step.pass === 2 && (i === 0 || plan[i - 1].pass === 1)) items.push(`<li class="turn">↩ then turns ${ARROW[step.direction]}</li>`);
+    const who = [
+      ...step.pickups.map((q) => `<span class="pick">🧍<bdi>${esc(q.name)}</bdi> → ${q.destination}</span>`),
+      ...step.dropoffs.map((q) => `<span class="drop-off">⇣<bdi>${esc(q.name)}</bdi></span>`),
+    ].join(" ") || `<span class="muted">call</span>`;
+    const why = step.pass === 1
+      ? (shabbat ? "Reachable by extending the current move" : "Ahead of the car in its current direction")
+      : (shabbat ? "Cannot be reached by extending the current move: served after the car turns" : "Behind the car: served after it turns");
+    items.push(`<li class="pass${step.pass}${moving && step.floor === s.target ? " current" : ""}" title="${why}"><span class="n">${i + 1}</span><span class="fl">${step.floor}</span>${ARROW[step.direction]} ${who}</li>`);
+  });
+  setHTML($("#plan"), items.join("") || `<li class="muted">${shabbat ? "Empty: the car sweeps floor by floor on its own." : "Empty. Place someone waiting to start."}</li>`);
+
+  const riders = dispatcher.passengers().filter((q) => q.state === "riding");
+  setHTML($("#riding"), riders.map((q) => `<span class="chip"><bdi>${esc(q.name)}</bdi> → ${q.destination}</span>`).join("") || `<span class="muted">Nobody.</span>`);
+
+  setHTML($("#decisions"), s.decisions.slice(0, 12).map((d) => {
+    const by = shabbat ? `<span class="by by-${d.by}">${d.by}</span>` : "";
+    const q = d.queue.length ? ` <span class="q">[${d.queue.join(", ")}]</span>` : "";
+    return `<li><span class="t">${fmtT(d.t)}</span>${by}at ${d.position.toFixed(1)} → <b>${d.picked}</b> ${d.direction ? ARROW[d.direction] : ""} <span class="muted">${esc(d.reason)}</span>${q}</li>`;
+  }).join("") || `<li class="muted">No targets chosen yet.</li>`);
+  setHTML($("#activity"), activity.slice(0, 20).map((a) => `<li><span class="t">${fmtT(a.t)}</span>${a.html}</li>`).join("") || `<li class="muted">Nothing yet.</li>`);
+}
+
+/* ---------------------------------------------------------------- loop */
+let lastFrame = performance.now(), lastPanels = 0;
+function frame(now) {
+  const real = Math.min(0.25, (now - lastFrame) / 1000);
+  lastFrame = now;
+  if (!paused) {
+    let left = real * speed;
+    while (left > 1e-9) {  // 50 ms steps, as the Python simulator thread
+      const h = Math.min(0.05, left);
+      simTime += h;
+      sim.step(simTime);
+      left -= h;
+    }
+  }
+  const s = sim.status();
+  renderBuilding(s);
+  if (now - lastPanels > 120) { lastPanels = now; renderPanels(s); renderPeople(); }
+  requestAnimationFrame(frame);
+}
+
+/* ---------------------------------------------------------------- controls */
+function setMode(shabbat) {
+  app.shabbat = shabbat;
+  sim.setShabbat(shabbat);
+  logActivity(`<b>${shabbat ? "Shabbat mode on" : "Shabbat mode off"}</b>`);
+  document.querySelectorAll(".seg.mode button").forEach((b) => b.setAttribute("aria-pressed", String((b.dataset.mode === "shabbat") === shabbat)));
+  save();
+}
+document.querySelectorAll(".seg.mode button").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.mode === "shabbat")));
+document.querySelectorAll(".seg.speed button").forEach((b) => b.addEventListener("click", () => {
+  speed = Number(b.dataset.speed);
+  document.querySelectorAll(".seg.speed button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+}));
+$("#pause").addEventListener("click", () => { paused = !paused; $("#pause").textContent = paused ? "Resume" : "Pause"; });
+$("#reset").addEventListener("click", () => { resetSim(); toast("Simulation reset. Your people list is kept."); });
+$("#top-floor").addEventListener("change", (ev) => { app.topFloor = Number(ev.target.value); save(); resetSim(); toast(`Building now has floors 0 to ${app.topFloor}. Simulation reset.`); });
+
+$("#add-person").addEventListener("submit", (ev) => {
+  ev.preventDefault();
+  const name = $("#new-name").value.trim();
+  if (!name) return;
+  app.people.push({ id: newId(), name, floor: Number($("#new-floor").value) });
+  $("#new-name").value = "";
+  save();
+  renderPeople();
+});
+$("#people-list").addEventListener("change", (ev) => {
+  const sel = ev.target.closest("[data-edit]");
+  if (!sel) return;
+  const p = app.people.find((x) => x.id === sel.dataset.edit);
+  if (p) { p.floor = Number(sel.value); save(); }
+  sel.blur();
+});
+$("#people-list").addEventListener("click", (ev) => {
+  const del = ev.target.closest("[data-delete]");
+  if (!del) return;
+  dispatcher.cancel(del.dataset.delete);
+  app.people = app.people.filter((x) => x.id !== del.dataset.delete);
+  save();
+  renderPeople();
+});
+$("#place-form").addEventListener("submit", (ev) => {
+  ev.preventDefault();
+  const id = $("#place-who").value;
+  if (!id) { toast("Everyone is already waiting or riding."); return; }
+  attempt(() => dispatcher.addWaiting(Number($("#place-floor").value), id));
+});
+$("#random5").addEventListener("click", () => {
+  const free = app.people.filter((p) => { const w = dispatcher.where.get(p.id); return !w || w.state === "at_floor"; })
+    .sort(() => Math.random() - 0.5).slice(0, 5);
+  if (!free.length) { toast("Everyone is already waiting or riding."); return; }
+  for (const p of free) {
+    for (let i = 0; i < 4; i++) {  // a random floor can be their own destination
+      try { dispatcher.addWaiting(Math.floor(Math.random() * (app.topFloor + 1)), p.id); break; } catch (e) { /* try another floor */ }
+    }
+  }
+});
+$("#clear-waiting").addEventListener("click", () => {
+  const n = dispatcher.clear();
+  toast(n ? `Removed ${n} waiting or riding. Floors already queued stay queued.` : "Nobody is waiting or riding.");
+});
+$("#floors").addEventListener("click", (ev) => {
+  const btn = ev.target.closest("[data-cancel]");
+  if (btn) dispatcher.cancel(btn.dataset.cancel);
+});
+$("#keypad").addEventListener("click", (ev) => {
+  const b = ev.target.closest("button[data-floor]");
+  if (!b || sim.shabbat) return;
+  attempt(() => { sim.requestFloor(Number(b.dataset.floor)); logActivity(`Keypad → floor <b>${b.dataset.floor}</b>`); });
+});
+
+/* ---------------------------------------------------------------- drag a name onto a floor */
+let drag = null, dragging = false;
+function rowUnder(x, y) { const el = document.elementFromPoint(x, y); return el ? el.closest(".floor-row") : null; }
+const clearDrop = () => document.querySelectorAll(".floor-row.drop").forEach((r) => r.classList.remove("drop"));
+$("#people-list").addEventListener("pointerdown", (ev) => {
+  if (ev.button !== 0 || ev.target.closest("button, select, input")) return;
+  const row = ev.target.closest("[data-person]");
+  if (!row) return;
+  ev.preventDefault();
+  drag = { id: row.dataset.person, name: row.querySelector(".name bdi").textContent, x: ev.clientX, y: ev.clientY, ghost: null };
+});
+document.addEventListener("pointermove", (ev) => {
+  if (!drag) return;
+  if (!drag.ghost) {
+    if (Math.hypot(ev.clientX - drag.x, ev.clientY - drag.y) < 6) return;
+    drag.ghost = document.createElement("div");
+    drag.ghost.className = "ghost";
+    drag.ghost.textContent = `🧍 ${drag.name}`;
+    document.body.appendChild(drag.ghost);
+    document.body.classList.add("dragging");
+    dragging = true;
+  }
+  drag.ghost.style.left = `${ev.clientX + 14}px`;
+  drag.ghost.style.top = `${ev.clientY + 10}px`;
+  const row = rowUnder(ev.clientX, ev.clientY);
+  if (!row || !row.classList.contains("drop")) { clearDrop(); if (row) row.classList.add("drop"); }
+});
+function endDrag(ev, dropped) {
+  if (!drag) return;
+  const d = drag;
+  drag = null;
+  if (!d.ghost) return;  // a click, not a drag
+  d.ghost.remove();
+  document.body.classList.remove("dragging");
+  clearDrop();
+  dragging = false;
+  const row = dropped ? rowUnder(ev.clientX, ev.clientY) : null;
+  if (row) attempt(() => dispatcher.addWaiting(Number(row.dataset.floor), d.id));
+  renderPeople();
+}
+document.addEventListener("pointerup", (ev) => endDrag(ev, true));
+document.addEventListener("pointercancel", (ev) => endDrag(ev, false));
+
+/* ---------------------------------------------------------------- start */
+resetSim();
+document.querySelectorAll(".seg.mode button").forEach((b) => b.setAttribute("aria-pressed", String((b.dataset.mode === "shabbat") === app.shabbat)));
+// Open on a working queue: place three example people waiting.
+if (app.examples) {
+  [[7, 0], [2, 2], [5, 4]].forEach(([floor, i]) => attempt(() => dispatcher.addWaiting(floor, app.people[i].id)));
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
