@@ -137,6 +137,17 @@ select, input { border: 1px solid var(--line); background: var(--surface); borde
 
 /* Controller */
 .car-status { display: flex; align-items: center; gap: 14px; }
+/* Shabbat traffic light: fixed lamp colours in both themes, unlit lamps dimmed */
+.signal { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 13px; font-weight: 600; }
+.signal .lamps { display: inline-flex; gap: 4px; padding: 4px 6px; border-radius: 12px; background: #1f2329; }
+.signal .lamp { width: 14px; height: 14px; border-radius: 50%; opacity: 0.18; }
+.signal .lamp.red { background: #ef4444; }
+.signal .lamp.yellow { background: #facc15; }
+.signal .lamp.green { background: #22c55e; }
+.signal[data-light="red"] .lamp.red, .signal[data-light="yellow"] .lamp.yellow, .signal[data-light="green"] .lamp.green { opacity: 1; }
+.signal[data-light="red"] .signal-text { color: var(--danger); }
+.signal[data-light="yellow"] .signal-text { color: var(--wait); }
+.signal[data-light="green"] .signal-text { color: var(--ok); }
 .display { font-family: var(--font-data); font-size: 44px; font-weight: 700; line-height: 1; min-width: 2.2ch; font-variant-numeric: tabular-nums; }
 .car-status .state { display: flex; flex-direction: column; gap: 3px; }
 .pill { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 10px; border: 1px solid currentColor; }
@@ -144,8 +155,18 @@ select, input { border: 1px solid var(--line); background: var(--surface); borde
 .pill.normal { color: var(--muted); }
 .pill.sent { color: var(--ok); }
 .pill.when { color: var(--wait); }
-.next-push { margin-top: 12px; padding: 9px 10px; border-radius: 8px; border: 1px solid var(--line); border-left: 4px solid var(--accent); background: var(--sunken); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13px; }
-.next-push b { font-family: var(--font-data); font-size: 15px; }
+.ctl-box { margin-top: 10px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); border-left: 4px solid var(--muted); background: var(--sunken); font-size: 13px; }
+.ctl-box.system { border-left-color: var(--accent); }
+/* The command's time: green while the elevator would follow it, grey once it would not */
+.cmd-time { font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 10px; }
+.cmd-time.valid { background: var(--ok-soft); color: var(--ok); }
+.cmd-time.stale { background: var(--sunken); color: var(--muted); border: 1px solid var(--line); text-decoration: line-through; }
+.ctl-line { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.ctl-name { font-weight: 600; }
+.ctl-box b { font-family: var(--font-data); font-size: 15px; }
+.ctl-sub { font-size: 12px; margin-top: 3px; color: var(--muted); }
+.ctl-box .yes { color: var(--ok); font-weight: 600; }
+.ctl-box .no { color: var(--wait); font-weight: 600; }
 .plan { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; font-size: 13px; }
 .plan li { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 4px 6px; border-radius: 6px; }
 .plan li.current { background: var(--accent-soft); }
@@ -160,8 +181,17 @@ select, input { border: 1px solid var(--line); background: var(--surface); borde
 .log .t { font-family: var(--font-data); color: var(--muted); margin-right: 4px; }
 .log .q { font-family: var(--font-data); color: var(--muted); }
 .by { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; padding: 0 5px; border-radius: 4px; margin-right: 4px; }
-.by.by-car { background: var(--sunken); color: var(--muted); border: 1px solid var(--line); }
-.by.by-controller { background: var(--accent-soft); color: var(--accent); }
+.by.by-elevator { background: var(--sunken); color: var(--muted); border: 1px solid var(--line); }
+.by.by-system { background: var(--accent-soft); color: var(--accent); }
+/* Collapsible section (closed by default): the summary is the heading plus a Show/Hide button */
+details.fold > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px; margin-top: 14px; margin-bottom: 6px; }
+details.fold > summary::-webkit-details-marker { display: none; }
+details.fold > summary h3 { margin: 0; }
+details.fold > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.fold-btn { font-size: 11px; font-weight: 600; padding: 1px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); }
+.fold-btn::before { content: "Show ▸"; }
+details.fold[open] .fold-btn::before { content: "Hide ▾"; }
+details.fold > summary:hover .fold-btn { border-color: var(--accent); }
 .riding-list { display: flex; flex-wrap: wrap; gap: 4px; }
 .riding-list .chip { background: var(--accent-soft); color: var(--accent); padding-right: 8px; }
 
@@ -187,6 +217,8 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
       <button type="button" data-speed="4" aria-pressed="false">×4</button>
     </div>
     <button type="button" id="pause">Pause</button>
+    <label class="muted" title="How long the doors stay open at each stop (in Shabbat mode: how long the car stops at each floor). Applies from the next stop.">Doors open <select id="door-seconds"></select></label>
+    <label class="muted" title="Shabbat traffic light: yellow for these last seconds before the doors close. People placed at that floor then do not board.">Yellow <select id="yellow-seconds"></select></label>
     <label class="muted">Top floor <select id="top-floor"></select></label>
     <button type="button" id="reset">Reset simulation</button>
   </div>
@@ -235,13 +267,20 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
         <span><span class="pill normal" id="mode-pill">Normal mode</span></span>
       </div>
     </div>
-    <div class="next-push" id="next-push"></div>
-    <h3>Controller queue <span id="queue-head" class="mono"></span></h3>
+    <div class="signal" id="signal" role="status" hidden>
+      <span class="lamps" aria-hidden="true"><span class="lamp red"></span><span class="lamp yellow"></span><span class="lamp green"></span></span>
+      <span class="signal-text" id="signal-text"></span>
+    </div>
+    <div class="ctl-box" id="elev-next"></div>
+    <div class="ctl-box system" id="sys-command"></div>
+    <h3>Controllers and queue <span id="queue-head" class="mono"></span></h3>
     <ul class="plan" id="plan"></ul>
     <h3>In the car</h3>
     <div class="riding-list" id="riding"></div>
-    <h3>How each next floor was chosen</h3>
-    <ul class="log" id="decisions"></ul>
+    <details class="fold">
+      <summary><h3>How each next floor was chosen</h3><span class="fold-btn" aria-hidden="true"></span></summary>
+      <ul class="log" id="decisions"></ul>
+    </details>
     <h3>Activity</h3>
     <ul class="log" id="activity"></ul>
   </section>
@@ -250,8 +289,10 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 
 <script>
 "use strict";
-/* Port of app/elevator/simulator.py (SimulatedElevator) and the passenger parts of
-   app/elevator/dispatcher.py (ElevatorDispatcher). Times are simulated seconds. */
+/* Port of the two controllers: app/elevator/simulator.py (the elevator controller), and the system controller:
+   app/elevator/shabbat_queue.py (Shabbat queue and next-target command, command.py) plus the passenger parts of
+   app/elevator/dispatcher.py. Times are simulated seconds; the Lab's Pause stops that clock, so it does not age
+   the command. */
 
 const EPS = 1e-6;
 const ARROW = { up: "▲", down: "▼" };
@@ -262,19 +303,32 @@ const pyRound = (x) => {  // Python's round(): halves go to the even neighbour
   return Math.abs(x % 1) === 0.5 && r % 2 !== 0 ? r - 1 : r;
 };
 
+/* The command field between the controllers: the system controller writes {floor, time}; the elevator reads it
+   when its doors close and follows it only if it is no older than the stop time. */
+class CommandRegister {
+  constructor() { this.command = null; }
+  write(command) { this.command = command; }
+  clear() { this.command = null; }
+  read() { return this.command; }
+}
+
+/* The elevator controller: Shabbat sweep (and its traffic light), or the buttons (SCAN) in normal mode. */
 class Elevator {
   constructor(cfg, shabbat) {
     this.cfg = cfg;
     this.position = cfg.entrance;
-    this.pending = new Set();
+    this.pending = new Set();  // normal mode: the buttons pressed
     this.direction = 0;
     this.target = null;
-    this.nextMove = null;  // Shabbat: [floor, direction] sent while the doors are open; taken when they close
+    this.targetSource = "";
+    this.targetReason = "";
     this.doorsOpenUntil = null;
+    this.closedAt = null;  // when the doors last closed: the start of the red light
     this.shabbat = shabbat;
-    this.commands = [];
+    this.register = null;
+    this.lastRead = null;
+    this.readWrittenAt = null;  // the command already judged
     this.decisions = [];
-    this.selectReason = "";
     this.now = 0;
     this.lastStep = 0;
     this.onStop = () => {};
@@ -282,10 +336,9 @@ class Elevator {
   }
 
   // ---- controller API
-  requestFloor(floor) {
+  requestFloor(floor) {  // a button press; not used in Shabbat mode
     this.checkFloor(floor);
-    if (this.pending.has(floor)) return false;
-    if (this.shabbat && this.doorsOpenAt(floor)) { this.onStop(floor); return true; }  // standing here with open doors
+    if (this.shabbat || this.pending.has(floor)) return false;
     this.pending.add(floor);
     return true;
   }
@@ -294,16 +347,15 @@ class Elevator {
   setShabbat(enabled) {
     if (this.shabbat === enabled) return;
     this.shabbat = enabled;
-    this.commands = [];
-    this.nextMove = null;
-    // Back to normal: finish the current move only if someone asked for that floor.
-    if (!enabled && this.doorsOpenUntil === null && this.target !== null && !this.pending.has(this.target)) {
-      this.pending.add(this.target);
+    this.lastRead = null;
+    this.readWrittenAt = null;
+    if (enabled) this.pending.clear();  // the system controller takes the buttons over into its queue
+    else if (this.doorsOpenUntil === null && this.target !== null && !this.pending.has(this.target)) {
+      this.pending.add(this.target);  // back to normal: finish the current move
     }
   }
   status() {
     const direction = this.travelDirection();
-    const sorted = (xs) => [...xs].sort((a, b) => a - b);
     return {
       mode: this.shabbat ? "shabbat" : "normal",
       currentFloor: pyRound(this.position),
@@ -311,11 +363,15 @@ class Elevator {
       state: this.state(),
       direction: dirName(direction),
       target: this.target,
-      pending: sorted(this.pending),
-      held: this.shabbat ? sorted([...this.pending].filter((f) => !this.reachable(f, direction))) : [],
+      nextTarget: this.nextTarget(),
+      pending: [...this.pending].sort((a, b) => a - b),
+      held: [],
       plan: this.plan(),
-      nextPush: this.nextPush(),
       decisions: [...this.decisions].reverse(),
+      commandCheck: this.commandCheck(),
+      lastRead: this.lastRead,
+      signal: this.signal(),
+      doorsCloseIn: this.doorsCloseIn(),
     };
   }
 
@@ -325,30 +381,18 @@ class Elevator {
     const dt = Math.max(0, now - this.lastStep);
     this.lastStep = now;
     if (this.doorsOpenUntil !== null) {
-      if (now < this.doorsOpenUntil) {
-        if (this.shabbat) this.controllerUpdate();  // doors open: the only time the controller may send
-        return;
-      }
+      if (now < this.doorsOpenUntil) return;
+      this.closedAt = this.doorsOpenUntil;
       this.doorsOpenUntil = null;
       this.onDoorsClosed(pyRound(this.position));
     }
-    if (this.shabbat) {
-      if (this.target === null) {
-        if (this.nextMove) {  // sent by the controller while the doors were open
-          [this.target, this.direction] = this.nextMove;
-          this.nextMove = null;
-        } else {
-          this.target = this.nextSweepFloor();  // the car decides on its own
-          if (this.target !== null) this.decide("car", this.target, `sweep: next floor ${this.target > this.position ? "up" : "down"}`);
-        }
-      }
-      if (this.target === null) return;
-    } else {
-      const previous = this.target;
-      this.target = this.selectTarget();
-      if (this.target === null) return;
-      if (this.target !== previous) this.decide("controller", this.target, this.selectReason);
+    if (this.target === null) {
+      if (this.shabbat) this.departShabbat(now);  // red light: read the system command, then move
+      else this.selectTarget();
+    } else if (!this.shabbat) {
+      this.selectTarget();
     }
+    if (this.target === null) return;
     const distance = this.target - this.position;
     const travel = dt / this.cfg.secondsPerFloor;
     if (Math.abs(distance) <= travel + EPS) {
@@ -360,12 +404,50 @@ class Elevator {
     }
   }
 
-  // Normal mode (SCAN): nearest request ahead in the current direction, else reverse.
+  // Shabbat, start of the red light: follow a fresh system command, else sweep on.
+  departShabbat(now) {
+    const step = this.sweepFrom(pyRound(this.position), this.direction);
+    if (!step) return;
+    const [sweepFloor, sweepDirection] = step;
+    const closedAt = this.closedAt;
+    this.closedAt = null;
+    let ignored = "";
+    const command = this.register ? this.register.read() : null;
+    if (command && command.writtenAt !== this.readWrittenAt) {
+      this.readWrittenAt = command.writtenAt;
+      const age = Math.max(0, (closedAt ?? now) - command.writtenAt);
+      const limit = this.cfg.shabbatStopSeconds;
+      const fresh = age <= limit + EPS;
+      const follow = fresh && command.floor !== pyRound(this.position);
+      const verdict = follow ? `written ${age.toFixed(1)} s before the doors closed, within the ${limit} s they were open`
+        : !fresh ? `written ${age.toFixed(1)} s before the doors closed, more than the ${limit} s they were open`
+        : "it is the car's own floor";
+      this.lastRead = { floor: command.floor, writtenAt: command.writtenAt, readAt: now, age, limit, followed: follow, reason: verdict };
+      if (follow) {
+        this.direction = command.floor > this.position ? 1 : -1;
+        this.setTarget(command.floor, "system command", `system command ${command.floor}: ${verdict}`);
+        return;
+      }
+      ignored = `; ignored system command ${command.floor} (${verdict})`;
+    }
+    this.direction = sweepDirection;
+    this.setTarget(sweepFloor, "sweep", `own sweep: next floor ${dirName(sweepDirection)}${ignored}`);
+  }
+
+  // Normal mode (SCAN): nearest button ahead in the current direction, else reverse.
   selectTarget() {
     const [floor, direction, reason] = this.choose(this.direction);
     this.direction = direction;
-    this.selectReason = reason;
-    return floor;
+    if (floor === null) this.target = null;
+    else if (floor !== this.target) this.setTarget(floor, "buttons", reason);
+  }
+  setTarget(floor, source, reason) {
+    this.target = floor;
+    this.targetSource = source;
+    this.targetReason = reason;
+    const d = floor > this.position ? 1 : floor < this.position ? -1 : 0;
+    this.decisions.push({ t: this.now, by: "elevator", picked: floor, reason, position: this.position, direction: dirName(d), queue: this.plan().map((s) => s.floor) });
+    if (this.decisions.length > 20) this.decisions.shift();
   }
   choose(direction) {
     const pos = this.position;
@@ -382,49 +464,30 @@ class Elevator {
     return [null, 0, ""];
   }
 
-  // The next floor the controller pushes to the car, and whether it is already the car's target.
-  nextPush() {
-    const moving = this.doorsOpenUntil === null && this.target !== null;
+  // The floor the car goes to next: while moving its target; otherwise where it heads by itself.
+  nextTarget() {
     const pos = this.position;
-    if (!this.shabbat) {
-      if (moving) {
-        const d = this.target > pos ? 1 : -1;
-        return { floor: this.target, direction: dirName(d), sent: true, when: "car target", reason: this.selectReason };
-      }
-      const [floor, d, reason] = this.choose(this.direction);
-      if (floor === null) return null;
-      const when = this.doorsOpenUntil !== null ? "when the doors close" : "now";
-      return { floor, direction: dirName(d), sent: false, when, reason };
+    if (this.doorsOpenUntil === null && this.target !== null) {
+      return { floor: this.target, direction: dirName(this.target > pos ? 1 : -1), source: this.targetSource, reason: this.targetReason, moving: true };
     }
-    // Shabbat: the controller pushes only while the doors are open.
-    if (moving) {
-      const d = this.target > pos ? 1 : -1;
-      return { floor: this.target, direction: dirName(d), sent: true, when: "car target", reason: "the car's current target (nothing is sent while the car moves)" };
+    if (this.shabbat) {
+      const step = this.sweepFrom(pyRound(pos), this.direction);
+      if (!step) return null;
+      return { floor: step[0], direction: dirName(step[1]), source: "sweep", reason: `own sweep: next floor ${dirName(step[1])}`, moving: false };
     }
-    const doorsOpen = this.doorsOpenUntil !== null;
-    if (doorsOpen && this.nextMove) {
-      const last = this.commands[this.commands.length - 1];
-      return { floor: this.nextMove[0], direction: dirName(this.nextMove[1]), sent: true, when: "when the doors close", reason: last ? last.reason : "" };
-    }
-    const step = this.sweepFrom(pyRound(pos), this.direction);
-    if (!step) return null;
-    const [nextFloor, d] = step;
-    const ext = this.extension(nextFloor, d);
-    if (ext) return { floor: ext[0], direction: dirName(d), sent: false, when: doorsOpen ? "next step" : "when the doors open", reason: ext[1] };
-    return { floor: nextFloor, direction: dirName(d), sent: false, when: "car decides", reason: "nothing to push: the car moves on to the next floor by itself" };
+    const [floor, d, reason] = this.choose(this.direction);
+    if (floor === null) return null;
+    return { floor, direction: dirName(d), source: "buttons", reason, moving: false };
   }
 
-  // Queued floors in service order. Pass 1: floors the car can still stop at in its current direction,
-  // nearest first (Shabbat: only at or beyond its target). Pass 2: the rest, after the car turns.
+  // Normal mode: the buttons in service order. Pass 1: ahead, nearest first. Pass 2: after the car turns.
   plan() {
-    if (!this.pending.size) return [];
+    if (this.shabbat || !this.pending.size) return [];
     const pos = this.position;
     const pending = [...this.pending];
     let direction = this.travelDirection();
     if (direction === 0) direction = pending.some((f) => f > pos) || !pending.some((f) => f < pos) ? 1 : -1;
-    const first = this.shabbat
-      ? pending.filter((f) => this.reachable(f, direction))
-      : pending.filter((f) => (f - pos) * direction >= -EPS);
+    const first = pending.filter((f) => (f - pos) * direction >= -EPS);
     const rest = pending.filter((f) => !first.includes(f));
     first.sort((a, b) => Math.abs(a - pos) - Math.abs(b - pos));
     rest.sort((a, b) => -a * direction - -b * direction);
@@ -434,19 +497,21 @@ class Elevator {
     ];
   }
 
-  decide(by, picked, reason) {
-    const d = picked > this.position ? 1 : picked < this.position ? -1 : 0;
-    this.decisions.push({ t: this.now, by, picked, reason, position: this.position, direction: dirName(d), queue: this.plan().map((s) => s.floor) });
-    if (this.decisions.length > 20) this.decisions.shift();
+  // Shabbat: the command as the elevator would judge it when its doors next close.
+  commandCheck() {
+    if (!this.shabbat || !this.register) return null;
+    const command = this.register.read();
+    if (!command) return null;
+    const doorsOpen = this.doorsOpenUntil !== null;
+    const age = Math.max(0, (doorsOpen ? this.doorsOpenUntil : this.now) - command.writtenAt);
+    const moving = !doorsOpen && this.target !== null;
+    const alreadyRead = command.writtenAt === this.readWrittenAt;
+    return {
+      floor: command.floor, age, when: doorsOpen ? "doors_close" : "now", limit: this.cfg.shabbatStopSeconds,
+      willFollow: !moving && !alreadyRead && age <= this.cfg.shabbatStopSeconds + EPS, alreadyRead,
+    };
   }
 
-  // Shabbat: the car's own sweep.
-  nextSweepFloor() {
-    const step = this.sweepFrom(pyRound(this.position), this.direction);
-    if (!step) return null;
-    this.direction = step[1];
-    return step[0];
-  }
   sweepFrom(floor, direction) {
     const { minFloor: low, maxFloor: high } = this.cfg;
     if (low === high) return null;
@@ -455,64 +520,30 @@ class Elevator {
     else if (floor <= low) direction = 1;
     return [floor + direction, direction];
   }
-
-  // Shabbat, doors open: send the car's next move, extending its own sweep step (never reversing it). The car
-  // takes it when the doors close; it is sent again if the queue changes it while they are still open.
-  controllerUpdate() {
-    const step = this.sweepFrom(pyRound(this.position), this.direction);
-    if (!step) return;
-    const [sweepFloor, direction] = step;
-    const ext = this.extension(sweepFloor, direction);
-    let best;
-    let reason;
-    if (ext) [best, reason] = ext;
-    else if (this.nextMove) [best, reason] = [sweepFloor, "queued floor is the next floor"];  // undo an earlier extension
-    else return;
-    if (this.nextMove && this.nextMove[0] === best && this.nextMove[1] === direction) return;
-    const from = this.nextMove ? this.nextMove[0] : sweepFloor;
-    this.commands.push({ t: this.now, from, to: best, direction: dirName(direction), reason });
-    this.nextMove = [best, direction];
-    this.decide("controller", best, `sent with doors open, instead of ${from}: ${reason}`);
-  }
-  // A queued floor at or beyond the target -> the nearest one; otherwise, if floors are queued behind the car,
-  // the end of the shaft so the car turns sooner.
-  extension(target, direction) {
-    const pending = [...this.pending];
-    const reachable = pending.filter((f) => this.isAhead(f, direction) && (f - target) * direction >= 0);
-    let best;
-    let reason;
-    if (reachable.length) {
-      best = reachable.reduce((a, b) => (Math.abs(b - this.position) < Math.abs(a - this.position) ? b : a));
-      reason = "queued floor ahead";
-    } else if (pending.length) {
-      best = direction > 0 ? this.cfg.maxFloor : this.cfg.minFloor;
-      reason = "queued floors behind: run to the end to turn sooner";
-    } else {
-      return null;
-    }
-    if (best === target || (best - target) * direction < 0) return null;  // nothing to do, or it would shorten the move
-    return [best, reason];
-  }
-  reachable(floor, direction) {
-    if (!this.isAhead(floor, direction)) return false;
-    return this.target === null || (floor - this.target) * direction >= 0;
-  }
-
   arrive(floor, now) {
     this.position = floor;
     this.pending.delete(floor);
     this.target = null;
     this.doorsOpenUntil = now + this.dwell();
     if (!this.pending.size && !this.shabbat) this.direction = 0;
-    if (this.shabbat) this.controllerUpdate();  // the doors just opened: the controller may send the next move
   }
   dwell() { return this.shabbat ? this.cfg.shabbatStopSeconds : this.cfg.doorOpenSeconds; }
+  // Shabbat traffic light: red (doors closed), green (open), yellow (the last seconds before they close).
+  doorsCloseIn() { return this.doorsOpenUntil === null ? null : Math.max(0, this.doorsOpenUntil - this.now); }
+  yellow() {
+    const remaining = this.doorsCloseIn();
+    return this.shabbat && remaining !== null && remaining <= this.cfg.shabbatWarningSeconds;
+  }
+  signal() {
+    if (!this.shabbat) return null;
+    if (this.doorsOpenUntil === null) return "red";
+    return this.yellow() ? "yellow" : "green";
+  }
   doorsOpenAt(floor) { return this.doorsOpenUntil !== null && Math.abs(this.position - floor) <= EPS; }
   travelDirection() {
     if (this.target !== null && Math.abs(this.target - this.position) > EPS) return this.target > this.position ? 1 : -1;
     return this.direction;
   }
-  isAhead(floor, direction) { return direction !== 0 && (floor - this.position) * direction > EPS; }
   checkFloor(floor) {
     if (!(floor >= this.cfg.minFloor && floor <= this.cfg.maxFloor)) throw new Error(`Floor must be between ${this.cfg.minFloor} and ${this.cfg.maxFloor}.`);
   }
@@ -523,21 +554,128 @@ class Elevator {
   }
 }
 
+/* System controller, Shabbat mode: the queue and the next-target command (shabbat_queue.py). */
+class ShabbatQueue {
+  constructor(elevator) {
+    this.elevator = elevator;
+    this.register = new CommandRegister();
+    elevator.register = this.register;
+    this.floors = new Set();
+    this.decisions = [];
+    this.note = null;
+  }
+  request(floor, update = true) {
+    if (this.floors.has(floor)) return false;
+    this.floors.add(floor);
+    if (update) this.update(`floor ${floor} queued`);
+    return true;
+  }
+  served(floor) { this.floors.delete(floor); }
+  takeAll() {
+    const floors = [...this.floors].sort((a, b) => a - b);
+    this.floors.clear();
+    this.note = null;
+    this.register.clear();
+    return floors;
+  }
+  // force (doors just opened): rewrite with a fresh time even if the floor is unchanged.
+  update(trigger, force = false) {
+    const car = this.elevator.status();
+    if (car.mode !== "shabbat" || !car.nextTarget) return;
+    const target = car.nextTarget.floor;
+    const direction = car.nextTarget.direction === "up" ? 1 : -1;
+    const [floor, reason] = this.extension(target, direction, car.position);
+    if (floor === null) {
+      this.note = reason;  // nothing to write; a previous command stays as it is, with its old time
+      return;
+    }
+    const current = this.register.read();
+    this.note = null;
+    if (!force && current && current.floor === floor) return;
+    this.register.write({ floor, direction: dirName(direction), writtenAt: this.elevator.now, reason });
+    this.decide(car, floor, `command written: ${reason}; the elevator's next target is ${target} (${trigger})`);
+  }
+  extension(target, direction, position) {
+    if (!this.floors.size) return [null, "nothing queued"];
+    const floors = [...this.floors];
+    const ahead = floors.filter((f) => (f - position) * direction > EPS && (f - target) * direction >= 0);
+    let best;
+    let reason;
+    if (ahead.length) {
+      best = ahead.reduce((a, b) => (Math.abs(b - position) < Math.abs(a - position) ? b : a));
+      reason = "nearest queued floor ahead";
+    } else {
+      best = direction > 0 ? this.elevator.cfg.maxFloor : this.elevator.cfg.minFloor;
+      reason = "queued floors behind: run to the end to turn sooner";
+    }
+    if (best === target) return [null, `${best} is already the elevator's next target`];
+    if ((best - target) * direction < 0) return [null, "it would shorten the move"];
+    return [best, reason];
+  }
+  status(car) {
+    const [plan, held] = this.plan(car);
+    return {
+      pending: [...this.floors].sort((a, b) => a - b), held, plan,
+      command: this.register.read(), commandNote: this.note, systemDecisions: [...this.decisions].reverse(),
+    };
+  }
+  // Pass 1: ahead of the car and not before its next target (a move is never shortened). Pass 2: the rest.
+  plan(car) {
+    if (!this.floors.size) return [[], []];
+    const pos = car.position;
+    const floors = [...this.floors];
+    let direction = { up: 1, down: -1 }[car.direction] || 0;
+    if (direction === 0) direction = floors.some((f) => f > pos) || !floors.some((f) => f < pos) ? 1 : -1;
+    const target = car.nextTarget ? car.nextTarget.floor : null;
+    const reachable = (f) => (f - pos) * direction > EPS && (target === null || (f - target) * direction >= 0);
+    const first = floors.filter(reachable).sort((a, b) => Math.abs(a - pos) - Math.abs(b - pos));
+    const rest = floors.filter((f) => !reachable(f)).sort((a, b) => -a * direction - -b * direction);
+    return [[
+      ...first.map((floor) => ({ floor, pass: 1, direction: dirName(direction) })),
+      ...rest.map((floor) => ({ floor, pass: 2, direction: dirName(-direction) })),
+    ], [...rest].sort((a, b) => a - b)];
+  }
+  decide(car, picked, reason) {
+    const d = picked === null ? 0 : picked > car.position ? 1 : picked < car.position ? -1 : 0;
+    this.decisions.push({ t: this.elevator.now, by: "system", picked, reason, position: car.position, direction: dirName(d), queue: this.plan(car)[0].map((s) => s.floor) });
+    if (this.decisions.length > 20) this.decisions.shift();
+  }
+}
+
 function chooseDestination(personFloor, originFloor, entranceFloor) {
   if (originFloor === personFloor) return [entranceFloor, `at floor ${personFloor} (their floor); going to entrance`];
   return [personFloor, "person's destination floor"];
 }
 
-/* Passengers: people placed waiting by hand board when the doors open at their floor
-   and get out at their destination (dispatcher.add_simulated / _on_stop). */
+/* System controller: people placed waiting by hand board when the doors open at their floor and get out at their
+   destination (dispatcher.add_simulated / _on_stop). Calls go to the buttons in normal mode, to the queue in
+   Shabbat mode. */
 class Dispatcher {
   constructor(elevator, people, log) {
     this.elevator = elevator;
     this.people = people;  // () => array of {id, name, floor}
     this.log = log;
+    this.queue = new ShabbatQueue(elevator);
     this.where = new Map();  // id -> {state: waiting|riding|at_floor, floor, destination}
     elevator.onStop = (floor) => this.handleStop(floor);
     elevator.onDoorsClosed = () => {};
+  }
+  call(floor, update = true) {
+    if (this.elevator.shabbat) this.queue.request(floor, update);
+    else this.elevator.requestFloor(floor);
+  }
+  setShabbat(enabled) {
+    if (enabled === this.elevator.shabbat) return;
+    if (enabled) {
+      const buttons = [...this.elevator.pending];
+      this.elevator.setShabbat(true);
+      for (const f of buttons) this.queue.request(f, false);
+      this.queue.update("Shabbat mode on");
+    } else {
+      const queued = this.queue.takeAll();
+      this.elevator.setShabbat(false);
+      for (const f of queued) this.elevator.requestFloor(f);
+    }
   }
   person(id) { return this.people().find((p) => p.id === id); }
   addWaiting(floor, personId) {
@@ -552,8 +690,11 @@ class Dispatcher {
     if (current && (current.state === "waiting" || current.state === "riding")) throw new Error(`${person.name} is already ${current.state}.`);
     this.where.set(person.id, { state: "waiting", floor, destination });
     this.log(`<bdi>${esc(person.name)}</bdi> waiting at <b>${floor}</b> → ${destination}`);
-    if (this.elevator.doorsOpenFloor === floor) this.handleStop(floor);  // doors already open here: board now
-    else this.elevator.requestFloor(floor);
+    if (this.elevator.doorsOpenFloor === floor && !this.elevator.yellow()) this.handleStop(floor);  // doors already open here: board now
+    else {
+      if (this.elevator.doorsOpenFloor === floor) this.log(`Yellow light: <b>${floor}</b> queued for a later visit`);
+      this.call(floor);
+    }
   }
   cancel(personId) {
     const w = this.where.get(personId);
@@ -565,6 +706,8 @@ class Dispatcher {
     return n;
   }
   handleStop(floor) {
+    const shabbat = this.elevator.shabbat;
+    if (shabbat) this.queue.served(floor);
     const boarding = [];
     for (const [id, w] of this.where) {
       if (w.state === "riding" && w.destination === floor) {
@@ -577,8 +720,17 @@ class Dispatcher {
     }
     for (const [id, destination] of boarding) {
       this.log(`<bdi>${esc(this.name(id))}</bdi> boarded at <b>${floor}</b> → ${destination}`);
-      this.elevator.requestFloor(destination);
+      this.call(destination, false);
     }
+    if (shabbat) this.queue.update(`doors open at ${floor}`, true);
+  }
+  // Both controllers' views merged (as GET /elevator does).
+  status() {
+    const car = this.elevator.status();
+    if (car.mode !== "shabbat") return { ...car, command: null, commandNote: null };
+    const system = this.queue.status(car);
+    const decisions = [...car.decisions, ...system.systemDecisions].sort((a, b) => b.t - a.t).slice(0, 20);
+    return { ...car, ...system, decisions };
   }
   name(id) { const p = this.person(id); return p ? p.name : "Removed person"; }
   passengers() {
@@ -605,22 +757,22 @@ function load() {
     const raw = localStorage.getItem(STORE_KEY);
     if (raw) {
       const data = JSON.parse(raw);
-      if (Array.isArray(data.people)) return { people: data.people, topFloor: data.topFloor || 10, shabbat: !!data.shabbat, examples: false };
+      if (Array.isArray(data.people)) return { people: data.people, topFloor: data.topFloor || 10, shabbat: !!data.shabbat, doorSeconds: data.doorSeconds ?? 3, yellowSeconds: data.yellowSeconds ?? 1, examples: false };
     }
   } catch (e) { /* storage unavailable: use examples */ }
-  return { people: EXAMPLES.map(([name, floor]) => ({ id: newId(), name, floor })), topFloor: 10, shabbat: false, examples: true };
+  return { people: EXAMPLES.map(([name, floor]) => ({ id: newId(), name, floor })), topFloor: 10, shabbat: false, doorSeconds: 3, yellowSeconds: 1, examples: true };
 }
 const app = load();
 function save() {
   app.examples = false;
-  try { localStorage.setItem(STORE_KEY, JSON.stringify({ people: app.people, topFloor: app.topFloor, shabbat: app.shabbat })); } catch (e) { /* not saved */ }
+  try { localStorage.setItem(STORE_KEY, JSON.stringify({ people: app.people, topFloor: app.topFloor, shabbat: app.shabbat, doorSeconds: app.doorSeconds, yellowSeconds: app.yellowSeconds })); } catch (e) { /* not saved */ }
 }
 
 /* ---------------------------------------------------------------- simulation wiring */
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 let sim, dispatcher, simTime, speed = 1, paused = false, activity = [];
-const cfg = () => ({ minFloor: 0, maxFloor: app.topFloor, entrance: 0, secondsPerFloor: 1.5, doorOpenSeconds: 3, shabbatStopSeconds: 3 });
+const cfg = () => ({ minFloor: 0, maxFloor: app.topFloor, entrance: 0, secondsPerFloor: 1.5, doorOpenSeconds: app.doorSeconds, shabbatStopSeconds: app.doorSeconds, shabbatWarningSeconds: app.yellowSeconds });
 const fmtT = (t) => `${t.toFixed(1)}s`;
 function logActivity(html) {
   activity.unshift({ t: simTime, html });
@@ -675,6 +827,12 @@ function buildSelectors() {
   nf.value = keep && Number(keep) <= app.topFloor ? keep : "1";
   $("#top-floor").innerHTML = [5, 6, 7, 8, 9, 10, 12, 15, 20].map((n) => `<option value="${n}">${n}</option>`).join("");
   $("#top-floor").value = String(app.topFloor);
+  const doorChoices = [...new Set([1, 2, 3, 5, 8, 10, 15, app.doorSeconds])].sort((a, b) => a - b);
+  $("#door-seconds").innerHTML = doorChoices.map((n) => `<option value="${n}">${n} s</option>`).join("");
+  $("#door-seconds").value = String(app.doorSeconds);
+  const yellowChoices = [...new Set([0, 0.5, 1, 1.5, 2, 3, app.yellowSeconds])].sort((a, b) => a - b);
+  $("#yellow-seconds").innerHTML = yellowChoices.map((n) => `<option value="${n}">${n} s</option>`).join("");
+  $("#yellow-seconds").value = String(app.yellowSeconds);
 }
 
 /* ---------------------------------------------------------------- rendering */
@@ -716,6 +874,13 @@ function renderBuilding(s) {
   const riders = dispatcher.passengers().filter((p) => p.state === "riding");
   $("#car-riders").textContent = riders.length ? `·${riders.length}` : "";
   $("#clock").textContent = `t = ${simTime.toFixed(1)} s${paused ? " (paused)" : ""}`;
+  const signal = $("#signal");
+  signal.hidden = !s.signal;
+  if (s.signal) {
+    signal.dataset.light = s.signal;
+    const closeIn = s.doorsCloseIn !== null ? ` · doors close in ${s.doorsCloseIn.toFixed(1)} s` : "";
+    $("#signal-text").textContent = { red: "Red · doors closed", green: `Green · doors open${closeIn}`, yellow: `Yellow · no new recognitions${closeIn}` }[s.signal];
+  }
 }
 
 function renderPanels(s) {
@@ -744,13 +909,35 @@ function renderPanels(s) {
   pill.className = `pill ${s.mode}`;
   pill.textContent = shabbat ? "Shabbat mode" : "Normal mode";
 
-  const p = s.nextPush;
-  const arrow = p && p.direction ? ARROW[p.direction] : "";
-  setHTML($("#next-push"), !p ? `<span class="muted">Nothing to push to the car.</span>`
-    : p.sent && p.when === "when the doors close" ? `Sent to the car: <b>${p.floor} ${arrow}</b> <span class="pill sent">pushed</span> <span class="muted">taken when the doors close · ${esc(p.reason)}</span>`
-    : p.sent ? `Car target <b>${p.floor} ${arrow}</b> <span class="pill sent">pushed</span> <span class="muted">${esc(p.reason)}</span>`
-    : p.when === "car decides" ? `The car goes on to <b>${p.floor} ${arrow}</b> by itself <span class="muted">· nothing to push</span>`
-    : `Next push to the car: <b>${p.floor} ${arrow}</b> <span class="pill when">${esc(p.when)}</span> <span class="muted">${esc(p.reason)}</span>`);
+  // Elevator controller: the floor the car goes to next, and the last command it read.
+  const nxt = s.nextTarget;
+  const SOURCE = { sweep: "own sweep", "system command": "system command", buttons: "buttons" };
+  const read = s.lastRead;
+  const readLine = shabbat && read
+    ? `<div class="ctl-sub">Last read at ${fmtT(read.readAt)}: ${read.followed ? `<span class="yes">followed</span>` : `<span class="no">ignored</span>`} command <b>${read.floor}</b> written at ${fmtT(read.writtenAt)} (${esc(read.reason)})</div>`
+    : "";
+  setHTML($("#elev-next"), `<div class="ctl-line"><span class="ctl-name">Elevator controller</span> ${nxt
+    ? `${nxt.moving ? "target" : "next target"} <b>${nxt.floor} ${nxt.direction ? ARROW[nxt.direction] : ""}</b> <span class="pill">${SOURCE[nxt.source] || esc(nxt.source)}</span> <span class="muted">${esc(nxt.reason)}</span>`
+    : `<span class="muted">no target</span>`}</div>${readLine}`);
+  // System controller: the next-target command (Shabbat mode), with the time it was written.
+  const cmd = s.command;
+  const check = s.commandCheck;
+  let sys;
+  if (!shabbat) {
+    sys = `<span class="muted">Normal mode: placed people press the elevator's buttons.</span>`;
+  } else if (cmd) {
+    const verdict = !check ? ""
+      : check.alreadyRead ? `<span class="muted">already read by the elevator</span>`
+      : check.willFollow ? `<span class="yes">will be followed when the doors close</span> <span class="muted">(${check.age.toFixed(1)} s old then, limit ${check.limit} s)</span>`
+      : check.when === "doors_close" ? `<span class="no">too old: ${check.age.toFixed(1)} s when the doors close, limit ${check.limit} s</span>`
+      : `<span class="no">written while the car moves: too old by its next stop</span>`;
+    const valid = !!(check && check.willFollow);
+    const note = s.commandNote ? `<div class="ctl-sub">No new command (${esc(s.commandNote)}); this one stays with its old time.</div>` : "";
+    sys = `command <b>${cmd.floor} ${ARROW[cmd.direction] || ""}</b> <span class="cmd-time ${valid ? "valid" : "stale"}" title="${valid ? "Valid: the elevator will follow it when its doors close" : "Not valid: the elevator will not follow it"}">written at ${fmtT(cmd.writtenAt)}</span> ${verdict}<div class="ctl-sub">${esc(cmd.reason)}</div>${note}`;
+  } else {
+    sys = `no command <span class="muted">(${esc(s.commandNote || "nothing queued")}): the car goes on by itself</span>`;
+  }
+  setHTML($("#sys-command"), `<div class="ctl-line"><span class="ctl-name">System controller</span> ${sys}</div>`);
 
   const moving = s.state === "moving_up" || s.state === "moving_down";
   $("#queue-head").textContent = s.plan.length ? `· car at ${s.position.toFixed(1)} ${s.direction ? ARROW[s.direction] : "(idle)"}` : "";
@@ -763,8 +950,8 @@ function renderPanels(s) {
       ...step.dropoffs.map((q) => `<span class="drop-off">⇣<bdi>${esc(q.name)}</bdi></span>`),
     ].join(" ") || `<span class="muted">call</span>`;
     const why = step.pass === 1
-      ? (shabbat ? "Reachable by extending the current move" : "Ahead of the car in its current direction")
-      : (shabbat ? "Cannot be reached by extending the current move: served after the car turns" : "Behind the car: served after it turns");
+      ? (shabbat ? "Ahead and not before the car's next target: served on this pass" : "Ahead of the car in its current direction")
+      : (shabbat ? "Behind the car or before its next target: served after the car turns" : "Behind the car: served after it turns");
     items.push(`<li class="pass${step.pass}${moving && step.floor === s.target ? " current" : ""}" title="${why}"><span class="n">${i + 1}</span><span class="fl">${step.floor}</span>${ARROW[step.direction]} ${who}</li>`);
   });
   setHTML($("#plan"), items.join("") || `<li class="muted">${shabbat ? "Empty: the car sweeps floor by floor on its own." : "Empty. Place someone waiting to start."}</li>`);
@@ -775,7 +962,8 @@ function renderPanels(s) {
   setHTML($("#decisions"), s.decisions.slice(0, 12).map((d) => {
     const by = shabbat ? `<span class="by by-${d.by}">${d.by}</span>` : "";
     const q = d.queue.length ? ` <span class="q">[${d.queue.join(", ")}]</span>` : "";
-    return `<li><span class="t">${fmtT(d.t)}</span>${by}at ${d.position.toFixed(1)} → <b>${d.picked}</b> ${d.direction ? ARROW[d.direction] : ""} <span class="muted">${esc(d.reason)}</span>${q}</li>`;
+    const picked = d.picked === null ? "<b>—</b>" : `<b>${d.picked}</b> ${d.direction ? ARROW[d.direction] : ""}`;
+    return `<li><span class="t">${fmtT(d.t)}</span>${by}at ${d.position.toFixed(1)} → ${picked} <span class="muted">${esc(d.reason)}</span>${q}</li>`;
   }).join("") || `<li class="muted">No targets chosen yet.</li>`);
   setHTML($("#activity"), activity.slice(0, 20).map((a) => `<li><span class="t">${fmtT(a.t)}</span>${a.html}</li>`).join("") || `<li class="muted">Nothing yet.</li>`);
 }
@@ -794,7 +982,7 @@ function frame(now) {
       left -= h;
     }
   }
-  const s = sim.status();
+  const s = dispatcher.status();
   renderBuilding(s);
   if (now - lastPanels > 120) { lastPanels = now; renderPanels(s); renderPeople(); }
   requestAnimationFrame(frame);
@@ -803,7 +991,7 @@ function frame(now) {
 /* ---------------------------------------------------------------- controls */
 function setMode(shabbat) {
   app.shabbat = shabbat;
-  sim.setShabbat(shabbat);
+  dispatcher.setShabbat(shabbat);
   logActivity(`<b>${shabbat ? "Shabbat mode on" : "Shabbat mode off"}</b>`);
   document.querySelectorAll(".seg.mode button").forEach((b) => b.setAttribute("aria-pressed", String((b.dataset.mode === "shabbat") === shabbat)));
   save();
@@ -815,6 +1003,19 @@ document.querySelectorAll(".seg.speed button").forEach((b) => b.addEventListener
 }));
 $("#pause").addEventListener("click", () => { paused = !paused; $("#pause").textContent = paused ? "Resume" : "Pause"; });
 $("#reset").addEventListener("click", () => { resetSim(); toast("Simulation reset. Your people list is kept."); });
+$("#yellow-seconds").addEventListener("change", (ev) => {
+  app.yellowSeconds = Number(ev.target.value);
+  sim.cfg.shabbatWarningSeconds = app.yellowSeconds;  // applies at once
+  logActivity(`Yellow light <b>${app.yellowSeconds} s</b> before the doors close`);
+  save();
+});
+$("#door-seconds").addEventListener("change", (ev) => {
+  app.doorSeconds = Number(ev.target.value);
+  sim.cfg.doorOpenSeconds = app.doorSeconds;  // read at each stop: applies from the next one
+  sim.cfg.shabbatStopSeconds = app.doorSeconds;
+  logActivity(`Doors open <b>${app.doorSeconds} s</b> from the next stop`);
+  save();
+});
 $("#top-floor").addEventListener("change", (ev) => { app.topFloor = Number(ev.target.value); save(); resetSim(); toast(`Building now has floors 0 to ${app.topFloor}. Simulation reset.`); });
 
 $("#add-person").addEventListener("submit", (ev) => {
