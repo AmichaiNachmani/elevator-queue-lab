@@ -195,6 +195,26 @@ details.fold > summary:hover .fold-btn { border-color: var(--accent); }
 .riding-list { display: flex; flex-wrap: wrap; gap: 4px; }
 .riding-list .chip { background: var(--accent-soft); color: var(--accent); padding-right: 8px; }
 
+/* Scenarios: full-width panel under the three working panels */
+.lab .scenarios { grid-column: 1 / -1; }
+.sc-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.sc-head h2 { margin-right: 4px; }
+.sc-head select { max-width: 240px; }
+.sc-meta { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-top: 10px; font-size: 13px; }
+.sc-meta label { display: flex; align-items: center; gap: 6px; }
+.sc-meta input { width: 220px; max-width: 100%; }
+.sc-steps { list-style: none; margin: 10px 0 8px; padding: 0; display: grid; gap: 6px; counter-reset: step; }
+.sc-step { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--sunken); font-size: 13px; counter-increment: step; }
+.sc-step::before { content: counter(step); font-family: var(--font-data); font-size: 11px; min-width: 20px; text-align: center; border: 1px solid var(--line); border-radius: 9px; color: var(--muted); }
+.sc-step select { padding: 2px 4px; font-size: 12px; }
+.sc-step input[type="number"] { width: 56px; padding: 2px 4px; font-size: 12px; }
+.sc-step .arrow { color: var(--muted); }
+.sc-step .icon-btn { margin-left: auto; }
+.sc-status { font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.sc-status.fired { background: var(--ok-soft); color: var(--ok); border-color: transparent; }
+.sc-status.failed { background: var(--wait-soft); color: var(--wait); border-color: transparent; }
+.sc-status.armed { color: var(--accent); border-color: var(--accent); }
+.sc-run-note { font-size: 12px; color: var(--muted); margin-left: 4px; }
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: 13px; max-width: calc(100% - 32px); z-index: 30; }
 .ghost { position: fixed; z-index: 40; pointer-events: none; padding: 3px 10px; border-radius: 12px; background: var(--accent); color: var(--surface); font-weight: 600; font-size: 13px; }
 body.dragging, body.dragging * { cursor: grabbing !important; }
@@ -284,6 +304,26 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
     <h3>Activity</h3>
     <ul class="log" id="activity"></ul>
   </section>
+  <section class="panel scenarios" aria-labelledby="scenarios-title">
+    <div class="sc-head">
+      <h2 id="scenarios-title">Scenarios</h2>
+      <select id="sc-select" aria-label="Scenario"></select>
+      <button type="button" id="sc-new">New</button>
+      <button type="button" id="sc-copy">Duplicate</button>
+      <button type="button" id="sc-delete">Delete</button>
+      <button type="button" class="primary" id="sc-run">▶ Run</button>
+      <button type="button" id="sc-stop" hidden>Stop</button>
+      <span class="sc-run-note" id="sc-run-note"></span>
+    </div>
+    <p class="hint">Every trip up and down is a <b>cycle</b>; cycle 1 starts when the scenario runs. Running resets the simulation to the start floor and mode. Each step fires once, when the car is in that cycle at that floor, going that way, with that light; the person is then recognised at the given floor (placed waiting there). Scenarios are saved in this browser.</p>
+    <div class="sc-meta" id="sc-meta">
+      <label>Name <input id="sc-name" maxlength="60" aria-label="Scenario name"></label>
+      <label>Start floor <select id="sc-start" aria-label="Start floor"></select></label>
+      <label>Mode <select id="sc-mode" aria-label="Mode"><option value="shabbat">Shabbat</option><option value="normal">Normal</option></select></label>
+    </div>
+    <ol class="sc-steps" id="sc-steps"></ol>
+    <button type="button" id="sc-add">+ Add step</button>
+  </section>
 </main>
 <div class="toast" id="toast" hidden></div>
 
@@ -325,6 +365,8 @@ class Elevator {
     this.doorsOpenUntil = null;
     this.closedAt = null;  // when the doors last closed: the start of the red light
     this.shabbat = shabbat;
+    this.cycle = 1;  // every trip up and down is a cycle: counts up when the car turns from down to up
+    this.lastMove = 0;
     this.register = null;
     this.lastRead = null;
     this.readWrittenAt = null;  // the command already judged
@@ -358,6 +400,7 @@ class Elevator {
     const direction = this.travelDirection();
     return {
       mode: this.shabbat ? "shabbat" : "normal",
+      cycle: this.cycle,
       currentFloor: pyRound(this.position),
       position: this.position,
       state: this.state(),
@@ -446,6 +489,8 @@ class Elevator {
     this.targetSource = source;
     this.targetReason = reason;
     const d = floor > this.position ? 1 : floor < this.position ? -1 : 0;
+    if (d === 1 && this.lastMove === -1) this.cycle += 1;  // turned from down to up: a new cycle
+    if (d) this.lastMove = d;
     this.decisions.push({ t: this.now, by: "elevator", picked: floor, reason, position: this.position, direction: dirName(d), queue: this.plan().map((s) => s.floor) });
     if (this.decisions.length > 20) this.decisions.shift();
   }
@@ -778,10 +823,12 @@ function logActivity(html) {
   activity.unshift({ t: simTime, html });
   if (activity.length > 40) activity.pop();
 }
-function resetSim() {
+function resetSim(startFloor = 0) {
   simTime = 0;
   activity = [];
+  scenarioRun = null;
   sim = new Elevator(cfg(), app.shabbat);
+  sim.position = Math.min(Math.max(startFloor, 0), app.topFloor);
   dispatcher = new Dispatcher(sim, () => app.people, logActivity);
   buildFloors();
   buildSelectors();
@@ -858,6 +905,11 @@ function renderPeople() {
   }).join("") || `<li class="muted">No people yet. Add someone below.</li>`;
   const list = $("#people-list");
   if (list._html !== html && !list.contains(document.activeElement)) { list.innerHTML = html; list._html = html; }
+  const peopleKey = app.people.map((p) => `${p.id}:${p.name}`).join("|");
+  if (peopleKey !== renderPeople.key && !$("#sc-steps").contains(document.activeElement)) {
+    renderPeople.key = peopleKey;
+    if (typeof renderScenarioEditor === "function" && renderPeople.ready) renderScenarioEditor();
+  }
   const who = $("#place-who");
   const free = app.people.filter((p) => { const w = where.get(p.id); return !w || w.state === "at_floor"; });
   const optHtml = free.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("") || `<option value="">Everyone is waiting or riding</option>`;
@@ -904,7 +956,7 @@ function renderPanels(s) {
   // controller column
   $("#display").textContent = `${s.currentFloor}${s.state === "moving_up" ? "▲" : s.state === "moving_down" ? "▼" : ""}`;
   const modeText = shabbat ? `stops every floor (${sim.cfg.shabbatStopSeconds} s)` : "";
-  $("#state-text").textContent = `${STATE_TEXT[s.state]}${modeText ? " · " + modeText : ""}`;
+  $("#state-text").textContent = `${STATE_TEXT[s.state]}${modeText ? " · " + modeText : ""} · cycle ${s.cycle}`;
   const pill = $("#mode-pill");
   pill.className = `pill ${s.mode}`;
   pill.textContent = shabbat ? "Shabbat mode" : "Normal mode";
@@ -979,12 +1031,13 @@ function frame(now) {
       const h = Math.min(0.05, left);
       simTime += h;
       sim.step(simTime);
+      if (scenarioRun) checkScenario();
       left -= h;
     }
   }
   const s = dispatcher.status();
   renderBuilding(s);
-  if (now - lastPanels > 120) { lastPanels = now; renderPanels(s); renderPeople(); }
+  if (now - lastPanels > 120) { lastPanels = now; renderPanels(s); renderPeople(); renderScenarioStatus(); }
   requestAnimationFrame(frame);
 }
 
@@ -1002,7 +1055,7 @@ document.querySelectorAll(".seg.speed button").forEach((b) => b.addEventListener
   document.querySelectorAll(".seg.speed button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
 }));
 $("#pause").addEventListener("click", () => { paused = !paused; $("#pause").textContent = paused ? "Resume" : "Pause"; });
-$("#reset").addEventListener("click", () => { resetSim(); toast("Simulation reset. Your people list is kept."); });
+$("#reset").addEventListener("click", () => { resetSim(); renderScenarioEditor(); toast("Simulation reset. Your people list is kept."); });
 $("#yellow-seconds").addEventListener("change", (ev) => {
   app.yellowSeconds = Number(ev.target.value);
   sim.cfg.shabbatWarningSeconds = app.yellowSeconds;  // applies at once
@@ -1016,7 +1069,7 @@ $("#door-seconds").addEventListener("change", (ev) => {
   logActivity(`Doors open <b>${app.doorSeconds} s</b> from the next stop`);
   save();
 });
-$("#top-floor").addEventListener("change", (ev) => { app.topFloor = Number(ev.target.value); save(); resetSim(); toast(`Building now has floors 0 to ${app.topFloor}. Simulation reset.`); });
+$("#top-floor").addEventListener("change", (ev) => { app.topFloor = Number(ev.target.value); save(); resetSim(); renderScenarioEditor(); toast(`Building now has floors 0 to ${app.topFloor}. Simulation reset.`); });
 
 $("#add-person").addEventListener("submit", (ev) => {
   ev.preventDefault();
@@ -1072,6 +1125,200 @@ $("#keypad").addEventListener("click", (ev) => {
   attempt(() => { sim.requestFloor(Number(b.dataset.floor)); logActivity(`Keypad → floor <b>${b.dataset.floor}</b>`); });
 });
 
+/* ---------------------------------------------------------------- scenarios */
+/* A scenario: {id, name, startFloor, mode, steps: [{id, cycle, floor, direction, light, personId, at}]}.
+   A step fires once, when the car is in that cycle, at that floor (its nearest floor while moving), going that
+   way, with that light ("any" matches every light, and normal mode, which has none); the person is then
+   recognised at floor "at". Kept in this browser's local storage. */
+const SCENARIO_KEY = "elevator-queue-lab:scenarios:v1";
+const LIGHTS = ["any", "red", "yellow", "green"];
+let scenarioRun = null;  // {id, fired: Map(stepId -> {t, ok, text}), done}
+
+function loadScenarios() {
+  try {
+    const data = JSON.parse(localStorage.getItem(SCENARIO_KEY) || "null");
+    if (data && Array.isArray(data.list)) return data;
+  } catch (e) { /* storage unavailable or damaged: start over */ }
+  return null;
+}
+function exampleScenario() {
+  // The example from the brief: Dana recognised at 3 on the way up in the yellow light; Omer at 0 on the way down.
+  const byName = (name, fallback) => (app.people.find((p) => p.name === name) || app.people[fallback] || {}).id || null;
+  return {
+    id: newId(), name: "Example: yellow at 3, red at 5", startFloor: 0, mode: "shabbat",
+    steps: [
+      { id: newId(), cycle: 1, floor: 3, direction: "up", light: "yellow", personId: byName("Dana", 0), at: 3 },
+      { id: newId(), cycle: 1, floor: 5, direction: "down", light: "red", personId: byName("Omer", 1), at: 0 },
+    ],
+  };
+}
+const scenarios = loadScenarios() || (() => { const ex = exampleScenario(); return { selected: ex.id, list: [ex] }; })();
+function saveScenarios() {
+  try { localStorage.setItem(SCENARIO_KEY, JSON.stringify(scenarios)); } catch (e) { /* not saved */ }
+}
+saveScenarios();
+const currentScenario = () => scenarios.list.find((x) => x.id === scenarios.selected) || null;
+
+function floorOptions(selected) {
+  return floorsList().reverse().map((f) => `<option value="${f}" ${f === selected ? "selected" : ""}>${f}</option>`).join("")
+    + (selected > app.topFloor ? `<option value="${selected}" selected>${selected}?</option>` : "");
+}
+function renderScenarioEditor() {
+  const sc = currentScenario();
+  $("#sc-select").innerHTML = scenarios.list.map((x) => `<option value="${esc(x.id)}" ${x.id === scenarios.selected ? "selected" : ""}>${esc(x.name || "Untitled")}</option>`).join("")
+    || `<option value="">No scenarios</option>`;
+  for (const id of ["#sc-copy", "#sc-delete", "#sc-run", "#sc-add"]) $(id).disabled = !sc;
+  $("#sc-meta").hidden = !sc;
+  if (!sc) { $("#sc-steps").innerHTML = `<li class="muted">No scenario. Click New to make one.</li>`; return; }
+  $("#sc-name").value = sc.name;
+  $("#sc-start").innerHTML = floorOptions(sc.startFloor);
+  $("#sc-mode").value = sc.mode;
+  const peopleOpts = (selected) => app.people.map((p) => `<option value="${esc(p.id)}" ${p.id === selected ? "selected" : ""}>${esc(p.name)}</option>`).join("")
+    + (selected && !app.people.some((p) => p.id === selected) ? `<option value="${esc(selected)}" selected>(removed person)</option>` : "")
+    + (!selected ? `<option value="" selected>Choose…</option>` : "");
+  $("#sc-steps").innerHTML = sc.steps.map((st) => `
+    <li class="sc-step" data-step="${esc(st.id)}">
+      <span>When in cycle</span><input type="number" min="1" max="99" step="1" data-field="cycle" value="${st.cycle}" aria-label="Cycle">
+      <span>the car is at floor</span><select data-field="floor" aria-label="Car floor">${floorOptions(st.floor)}</select>
+      <span>going</span><select data-field="direction" aria-label="Direction"><option value="up" ${st.direction === "up" ? "selected" : ""}>up ▲</option><option value="down" ${st.direction === "down" ? "selected" : ""}>down ▼</option></select>
+      <span>with light</span><select data-field="light" aria-label="Light">${LIGHTS.map((l) => `<option value="${l}" ${l === st.light ? "selected" : ""}>${l}</option>`).join("")}</select>
+      <span class="arrow">→</span>
+      <select data-field="personId" aria-label="Person">${peopleOpts(st.personId)}</select>
+      <span>is recognised at floor</span><select data-field="at" aria-label="Floor where the person is recognised">${floorOptions(st.at)}</select>
+      <span class="sc-status" data-status="${esc(st.id)}"></span>
+      <button type="button" class="icon-btn" data-remove="${esc(st.id)}" aria-label="Remove step" title="Remove step">×</button>
+    </li>`).join("") || `<li class="muted">No steps yet. Add one below.</li>`;
+  renderScenarioStatus();
+}
+function renderScenarioStatus() {
+  const run = scenarioRun;
+  const sc = currentScenario();
+  const running = !!(run && !run.done);
+  $("#sc-run").hidden = running;
+  $("#sc-stop").hidden = !running;
+  let note = "";
+  if (run && sc && run.id === sc.id) {
+    const n = run.fired.size;
+    note = run.done ? `Finished: all ${sc.steps.length} steps fired.` : `Running · ${n} of ${sc.steps.length} steps fired · cycle ${sim.cycle}`;
+  }
+  $("#sc-run-note").textContent = note;
+  document.querySelectorAll("[data-status]").forEach((el) => {
+    const f = run && sc && run.id === sc.id ? run.fired.get(el.dataset.status) : null;
+    el.className = `sc-status ${f ? (f.ok ? "fired" : "failed") : run && sc && run.id === sc.id ? "armed" : ""}`;
+    el.textContent = f ? `${f.ok ? "✓" : "✗"} ${fmtT(f.t)}` : run && sc && run.id === sc.id ? "waiting" : "";
+    el.title = f ? f.text : "";
+  });
+}
+function checkScenario() {
+  const run = scenarioRun;
+  const sc = scenarios.list.find((x) => x.id === run.id);
+  if (!sc || run.done) return;
+  const floor = sim.currentFloor;
+  const direction = dirName(sim.travelDirection());
+  const light = sim.signal();
+  for (const st of sc.steps) {
+    if (run.fired.has(st.id)) continue;
+    if (st.cycle !== sim.cycle || st.floor !== floor || st.direction !== direction) continue;
+    if (st.light !== "any" && st.light !== light) continue;
+    const person = app.people.find((p) => p.id === st.personId);
+    const when = `cycle ${st.cycle}, floor ${st.floor} ${ARROW[st.direction]}${light ? `, ${light}` : ""}`;
+    if (!person) {
+      run.fired.set(st.id, { t: simTime, ok: false, text: "No person chosen, or the person was removed" });
+      logActivity(`Scenario (${when}): <span class="muted">no person, step skipped</span>`);
+      continue;
+    }
+    logActivity(`Scenario (${when}): <bdi>${esc(person.name)}</bdi> recognised at <b>${st.at}</b>`);
+    try {
+      dispatcher.addWaiting(st.at, person.id);
+      run.fired.set(st.id, { t: simTime, ok: true, text: `${person.name} recognised at ${st.at} (${when})` });
+    } catch (e) {
+      run.fired.set(st.id, { t: simTime, ok: false, text: e.message });
+      logActivity(`<span class="muted">${esc(e.message)}</span>`);
+    }
+  }
+  if (run.fired.size >= sc.steps.length) { run.done = true; logActivity(`<b>Scenario “${esc(sc.name)}” finished</b>`); }
+}
+function runScenario() {
+  const sc = currentScenario();
+  if (!sc) return;
+  if (!sc.steps.length) { toast("Add at least one step first."); return; }
+  app.shabbat = sc.mode === "shabbat";
+  document.querySelectorAll(".seg.mode button").forEach((b) => b.setAttribute("aria-pressed", String((b.dataset.mode === "shabbat") === app.shabbat)));
+  save();
+  resetSim(sc.startFloor);
+  scenarioRun = { id: sc.id, fired: new Map(), done: false };
+  if (paused) { paused = false; $("#pause").textContent = "Pause"; }
+  logActivity(`<b>Scenario “${esc(sc.name)}” started</b> at floor ${sc.startFloor}, ${sc.mode} mode`);
+  renderScenarioEditor();
+}
+function updateScenario(mutator) {
+  const sc = currentScenario();
+  if (!sc) return;
+  mutator(sc);
+  saveScenarios();
+}
+function newStep(sc) {
+  const last = sc.steps[sc.steps.length - 1];
+  return { id: newId(), cycle: last ? last.cycle : 1, floor: last ? last.floor : 1, direction: last ? last.direction : "up",
+    light: last ? last.light : "any", personId: app.people[0] ? app.people[0].id : null, at: last ? last.at : 1 };
+}
+
+$("#sc-select").addEventListener("change", (ev) => { scenarios.selected = ev.target.value; saveScenarios(); renderScenarioEditor(); });
+$("#sc-new").addEventListener("click", () => {
+  const sc = { id: newId(), name: `Scenario ${scenarios.list.length + 1}`, startFloor: 0, mode: app.shabbat ? "shabbat" : "normal", steps: [] };
+  sc.steps.push(newStep(sc));
+  scenarios.list.push(sc);
+  scenarios.selected = sc.id;
+  saveScenarios();
+  renderScenarioEditor();
+  $("#sc-name").select();
+});
+$("#sc-copy").addEventListener("click", () => {
+  const sc = currentScenario();
+  if (!sc) return;
+  const copy = { ...structuredClone(sc), id: newId(), name: `${sc.name} (copy)` };
+  copy.steps.forEach((st) => (st.id = newId()));
+  scenarios.list.push(copy);
+  scenarios.selected = copy.id;
+  saveScenarios();
+  renderScenarioEditor();
+});
+$("#sc-delete").addEventListener("click", () => {
+  const sc = currentScenario();
+  if (!sc || !confirm(`Delete the scenario “${sc.name}”?`)) return;
+  if (scenarioRun && scenarioRun.id === sc.id) scenarioRun = null;
+  scenarios.list = scenarios.list.filter((x) => x.id !== sc.id);
+  scenarios.selected = scenarios.list[0] ? scenarios.list[0].id : null;
+  saveScenarios();
+  renderScenarioEditor();
+});
+$("#sc-run").addEventListener("click", runScenario);
+$("#sc-stop").addEventListener("click", () => { scenarioRun = null; logActivity("<b>Scenario stopped</b>"); renderScenarioStatus(); });
+$("#sc-add").addEventListener("click", () => { updateScenario((sc) => sc.steps.push(newStep(sc))); renderScenarioEditor(); });
+$("#sc-name").addEventListener("input", (ev) => {
+  updateScenario((sc) => (sc.name = ev.target.value));
+  const opt = $("#sc-select").selectedOptions[0];
+  if (opt) opt.textContent = ev.target.value || "Untitled";
+});
+$("#sc-start").addEventListener("change", (ev) => updateScenario((sc) => (sc.startFloor = Number(ev.target.value))));
+$("#sc-mode").addEventListener("change", (ev) => updateScenario((sc) => (sc.mode = ev.target.value)));
+$("#sc-steps").addEventListener("change", (ev) => {
+  const field = ev.target.dataset.field;
+  const li = ev.target.closest("[data-step]");
+  if (!field || !li) return;
+  let value = ev.target.value;
+  if (field === "cycle") value = Math.max(1, Math.round(Number(value)) || 1);
+  else if (field === "floor" || field === "at") value = Number(value);
+  updateScenario((sc) => { const st = sc.steps.find((x) => x.id === li.dataset.step); if (st) st[field] = value; });
+  if (field === "cycle") ev.target.value = value;
+});
+$("#sc-steps").addEventListener("click", (ev) => {
+  const btn = ev.target.closest("[data-remove]");
+  if (!btn) return;
+  updateScenario((sc) => (sc.steps = sc.steps.filter((x) => x.id !== btn.dataset.remove)));
+  renderScenarioEditor();
+});
+
 /* ---------------------------------------------------------------- drag a name onto a floor */
 let drag = null, dragging = false;
 function rowUnder(x, y) { const el = document.elementFromPoint(x, y); return el ? el.closest(".floor-row") : null; }
@@ -1117,6 +1364,8 @@ document.addEventListener("pointercancel", (ev) => endDrag(ev, false));
 
 /* ---------------------------------------------------------------- start */
 resetSim();
+renderPeople.ready = true;
+renderScenarioEditor();
 document.querySelectorAll(".seg.mode button").forEach((b) => b.setAttribute("aria-pressed", String((b.dataset.mode === "shabbat") === app.shabbat)));
 // Open on a working queue: place three example people waiting.
 if (app.examples) {
