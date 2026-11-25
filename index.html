@@ -124,6 +124,7 @@ select, input { border: 1px solid var(--line); background: var(--surface); borde
 .floor-row.drop { background: var(--accent-soft); outline: 2px dashed var(--accent); outline-offset: -2px; }
 .chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 1px 4px 1px 8px; border-radius: 12px; background: var(--wait-soft); color: var(--wait); font-weight: 500; white-space: nowrap; max-width: 100%; }
 .chip bdi { overflow: hidden; text-overflow: ellipsis; }
+.chip.seen { background: transparent; border: 1px dashed var(--wait); }
 .chip button { border: 0; background: transparent; padding: 0 4px; color: inherit; font-size: 13px; line-height: 1; }
 .car { position: absolute; left: 51px; width: 64px; border-radius: 5px; background: var(--car); color: var(--car-ink); display: flex; align-items: center; justify-content: center; gap: 4px; font-family: var(--font-data); font-weight: 700; font-size: 13px; pointer-events: none; }
 .car.open { background: var(--ok); color: var(--surface); }
@@ -237,8 +238,8 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
       <button type="button" data-speed="4" aria-pressed="false">×4</button>
     </div>
     <button type="button" id="pause">Pause</button>
-    <label class="muted" title="How long the doors stay open at each stop (in Shabbat mode: how long the car stops at each floor). Applies from the next stop.">Doors open <select id="door-seconds"></select></label>
-    <label class="muted" title="Shabbat traffic light: yellow for these last seconds before the doors close. People placed at that floor then do not board.">Yellow <select id="yellow-seconds"></select></label>
+    <label class="muted" title="How long the doors stay open before the yellow light (in normal mode the doors stay open for green + yellow). Applies from the next stop.">Green <select id="green-seconds"></select></label>
+    <label class="muted" title="Shabbat traffic light: the last seconds before the doors close. Nobody is recognised then; a person standing there is recognised when the light turns red.">Yellow <select id="yellow-seconds"></select></label>
     <label class="muted">Top floor <select id="top-floor"></select></label>
     <button type="button" id="reset">Reset simulation</button>
   </div>
@@ -270,7 +271,6 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
       <select id="place-who" aria-label="Person"></select>
       <label>at floor <select id="place-floor"></select></label>
       <button type="submit" class="primary">Place</button>
-      <button type="button" id="random5" title="Place up to 5 people who are not already waiting or riding, at random floors">+5 random</button>
       <button type="button" id="clear-waiting">Clear people</button>
     </form>
     <p class="hint">As with a camera sighting, only the person and the floor are given. The destination is their own floor, or the entrance when they wait on their own floor. They board when the doors open there.</p>
@@ -702,6 +702,7 @@ class Dispatcher {
     this.log = log;
     this.queue = new ShabbatQueue(elevator);
     this.where = new Map();  // id -> {state: waiting|riding|at_floor, floor, destination}
+    this.inView = new Map();  // id -> floor: placed during the yellow light, not recognised yet
     elevator.onStop = (floor) => this.handleStop(floor);
     elevator.onDoorsClosed = () => {};
   }
@@ -733,21 +734,37 @@ class Dispatcher {
     if (destination === floor) throw new Error(`${person.name} is already at their destination floor ${floor}.`);
     const current = this.where.get(person.id);
     if (current && (current.state === "waiting" || current.state === "riding")) throw new Error(`${person.name} is already ${current.state}.`);
+    if (this.inView.has(person.id)) throw new Error(`${person.name} is already in view, not recognised yet.`);
+    if (this.elevator.yellow()) {
+      // Yellow light: not recognised now. They are taken to be still standing there, so they are recognised at
+      // the start of the red light, after the car has read its command (recogniseInView).
+      this.inView.set(person.id, floor);
+      this.log(`<bdi>${esc(person.name)}</bdi> in view at <b>${floor}</b> during the yellow light: not recognised yet`);
+      return;
+    }
     this.where.set(person.id, { state: "waiting", floor, destination });
     this.log(`<bdi>${esc(person.name)}</bdi> waiting at <b>${floor}</b> → ${destination}`);
-    if (this.elevator.doorsOpenFloor === floor && !this.elevator.yellow()) this.handleStop(floor);  // doors already open here: board now
-    else {
-      if (this.elevator.doorsOpenFloor === floor) this.log(`Yellow light: <b>${floor}</b> queued for a later visit`);
-      this.call(floor);
+    if (this.elevator.doorsOpenFloor === floor) this.handleStop(floor);  // doors already open here: board now
+    else this.call(floor);
+  }
+  // Start of the red light: the people in view during the yellow light are recognised now.
+  recogniseInView() {
+    const seen = [...this.inView];
+    this.inView.clear();
+    for (const [id, floor] of seen) {
+      this.log(`<bdi>${esc(this.name(id))}</bdi> recognised at <b>${floor}</b> (after the yellow light)`);
+      try { this.addWaiting(floor, id); } catch (e) { this.log(`<span class="muted">${esc(e.message)}</span>`); }
     }
   }
   cancel(personId) {
+    if (this.inView.delete(personId)) { this.log(`<bdi>${esc(this.name(personId))}</bdi> left`); return; }
     const w = this.where.get(personId);
     if (w && w.state === "waiting") { this.where.delete(personId); this.log(`<bdi>${esc(this.name(personId))}</bdi> left floor ${w.floor}`); }
   }
   clear() {
-    const n = [...this.where.values()].filter((w) => w.state !== "at_floor").length;
+    const n = [...this.where.values()].filter((w) => w.state !== "at_floor").length + this.inView.size;
     this.where.clear();
+    this.inView.clear();
     return n;
   }
   handleStop(floor) {
@@ -802,22 +819,23 @@ function load() {
     const raw = localStorage.getItem(STORE_KEY);
     if (raw) {
       const data = JSON.parse(raw);
-      if (Array.isArray(data.people)) return { people: data.people, topFloor: data.topFloor || 10, shabbat: !!data.shabbat, doorSeconds: data.doorSeconds ?? 3, yellowSeconds: data.yellowSeconds ?? 1, examples: false };
+      if (Array.isArray(data.people)) return { people: data.people, topFloor: data.topFloor || 10, shabbat: !!data.shabbat, greenSeconds: data.greenSeconds ?? Math.max(0, (data.doorSeconds ?? 3) - (data.yellowSeconds ?? 1)), yellowSeconds: data.yellowSeconds ?? 1, examples: false };
     }
   } catch (e) { /* storage unavailable: use examples */ }
-  return { people: EXAMPLES.map(([name, floor]) => ({ id: newId(), name, floor })), topFloor: 10, shabbat: false, doorSeconds: 3, yellowSeconds: 1, examples: true };
+  return { people: EXAMPLES.map(([name, floor]) => ({ id: newId(), name, floor })), topFloor: 10, shabbat: false, greenSeconds: 2, yellowSeconds: 1, examples: true };
 }
 const app = load();
 function save() {
   app.examples = false;
-  try { localStorage.setItem(STORE_KEY, JSON.stringify({ people: app.people, topFloor: app.topFloor, shabbat: app.shabbat, doorSeconds: app.doorSeconds, yellowSeconds: app.yellowSeconds })); } catch (e) { /* not saved */ }
+  try { localStorage.setItem(STORE_KEY, JSON.stringify({ people: app.people, topFloor: app.topFloor, shabbat: app.shabbat, greenSeconds: app.greenSeconds, yellowSeconds: app.yellowSeconds })); } catch (e) { /* not saved */ }
 }
 
 /* ---------------------------------------------------------------- simulation wiring */
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 let sim, dispatcher, simTime, speed = 1, paused = false, activity = [];
-const cfg = () => ({ minFloor: 0, maxFloor: app.topFloor, entrance: 0, secondsPerFloor: 1.5, doorOpenSeconds: app.doorSeconds, shabbatStopSeconds: app.doorSeconds, shabbatWarningSeconds: app.yellowSeconds });
+const cfg = () => ({ minFloor: 0, maxFloor: app.topFloor, entrance: 0, secondsPerFloor: 1.5, doorOpenSeconds: stopSeconds(), shabbatStopSeconds: stopSeconds(), shabbatWarningSeconds: app.yellowSeconds });
+function stopSeconds() { return app.greenSeconds + app.yellowSeconds; }  // the doors are open for green + yellow
 const fmtT = (t) => `${t.toFixed(1)}s`;
 function logActivity(html) {
   activity.unshift({ t: simTime, html });
@@ -828,8 +846,10 @@ function resetSim(startFloor = 0) {
   activity = [];
   scenarioRun = null;
   sim = new Elevator(cfg(), app.shabbat);
-  sim.position = Math.min(Math.max(startFloor, 0), app.topFloor);
   dispatcher = new Dispatcher(sim, () => app.people, logActivity);
+  const start = Math.min(Math.max(startFloor, 0), app.topFloor);
+  sim.arrive(start, 0);  // start standing at the floor with the doors open
+  dispatcher.handleStop(start);
   buildFloors();
   buildSelectors();
 }
@@ -874,10 +894,10 @@ function buildSelectors() {
   nf.value = keep && Number(keep) <= app.topFloor ? keep : "1";
   $("#top-floor").innerHTML = [5, 6, 7, 8, 9, 10, 12, 15, 20].map((n) => `<option value="${n}">${n}</option>`).join("");
   $("#top-floor").value = String(app.topFloor);
-  const doorChoices = [...new Set([1, 2, 3, 5, 8, 10, 15, app.doorSeconds])].sort((a, b) => a - b);
-  $("#door-seconds").innerHTML = doorChoices.map((n) => `<option value="${n}">${n} s</option>`).join("");
-  $("#door-seconds").value = String(app.doorSeconds);
-  const yellowChoices = [...new Set([0, 0.5, 1, 1.5, 2, 3, app.yellowSeconds])].sort((a, b) => a - b);
+  const greenChoices = [...new Set([1, 2, 3, 5, 8, 10, 15, 20, 30, 45, 60, app.greenSeconds])].sort((a, b) => a - b);
+  $("#green-seconds").innerHTML = greenChoices.map((n) => `<option value="${n}">${n} s</option>`).join("");
+  $("#green-seconds").value = String(app.greenSeconds);
+  const yellowChoices = [...new Set([0, 0.5, 1, 1.5, 2, 3, 5, 10, 15, 20, app.yellowSeconds])].sort((a, b) => a - b);
   $("#yellow-seconds").innerHTML = yellowChoices.map((n) => `<option value="${n}">${n} s</option>`).join("");
   $("#yellow-seconds").value = String(app.yellowSeconds);
 }
@@ -895,10 +915,12 @@ function renderPeople() {
     + (sel > app.topFloor ? `<option value="${sel}" selected>${sel}?</option>` : "");
   const html = app.people.map((p) => {
     const w = where.get(p.id);
-    const busy = w && (w.state === "waiting" || w.state === "riding");
-    const state = !w ? "" : w.state === "waiting" ? `Waiting at ${w.floor} → ${w.destination}` : w.state === "riding" ? `In the car → ${w.destination}` : `At floor ${w.floor}`;
+    const seenAt = dispatcher.inView.get(p.id);
+    const busy = seenAt !== undefined || (w && (w.state === "waiting" || w.state === "riding"));
+    const state = seenAt !== undefined ? `In view at ${seenAt}, not recognised yet (yellow)`
+      : !w ? "" : w.state === "waiting" ? `Waiting at ${w.floor} → ${w.destination}` : w.state === "riding" ? `In the car → ${w.destination}` : `At floor ${w.floor}`;
     return `<li class="person ${busy ? "" : "draggable"}" ${busy ? "" : `data-person="${esc(p.id)}" title="Drag onto a floor to place ${esc(p.name)} waiting there"`}>
-      <div class="who"><span class="name"><bdi>${esc(p.name)}</bdi></span><span class="state ${w ? w.state : ""}">${esc(state) || "&nbsp;"}</span></div>
+      <div class="who"><span class="name"><bdi>${esc(p.name)}</bdi></span><span class="state ${seenAt !== undefined ? "waiting" : w ? w.state : ""}">${esc(state) || "&nbsp;"}</span></div>
       <select data-edit="${esc(p.id)}" aria-label="Destination floor of ${esc(p.name)}" title="Destination floor">${floorOpts(p.floor)}</select>
       <button type="button" class="icon-btn" data-delete="${esc(p.id)}" aria-label="Delete ${esc(p.name)}" title="Delete">×</button>
     </li>`;
@@ -911,7 +933,7 @@ function renderPeople() {
     if (typeof renderScenarioEditor === "function" && renderPeople.ready) renderScenarioEditor();
   }
   const who = $("#place-who");
-  const free = app.people.filter((p) => { const w = where.get(p.id); return !w || w.state === "at_floor"; });
+  const free = app.people.filter((p) => { const w = where.get(p.id); return !dispatcher.inView.has(p.id) && (!w || w.state === "at_floor"); });
   const optHtml = free.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("") || `<option value="">Everyone is waiting or riding</option>`;
   if (who._html !== optHtml && document.activeElement !== who) { const v = who.value; who.innerHTML = optHtml; who._html = optHtml; if (free.some((p) => p.id === v)) who.value = v; }
 }
@@ -943,8 +965,10 @@ function renderPanels(s) {
     row.classList.toggle("target", s.target === f && s.state !== "doors_open");
     row.classList.toggle("held", s.held.includes(f));
     const here = waiting.filter((p) => p.floor === f);
+    const seen = [...dispatcher.inView].filter(([, at]) => at === f);
     setHTML(row.querySelector(".fl-landing"), here.map((p) =>
-      `<span class="chip" title="Waiting, going to ${p.destination}"><bdi>${esc(p.name)}</bdi> → ${p.destination}<button type="button" data-cancel="${esc(p.id)}" aria-label="Remove ${esc(p.name)} from floor ${f}">×</button></span>`).join(""));
+      `<span class="chip" title="Waiting, going to ${p.destination}"><bdi>${esc(p.name)}</bdi> → ${p.destination}<button type="button" data-cancel="${esc(p.id)}" aria-label="Remove ${esc(p.name)} from floor ${f}">×</button></span>`).join("")
+      + seen.map(([id]) => `<span class="chip seen" title="In view during the yellow light: not recognised yet; recognised when the light turns red">👁 <bdi>${esc(dispatcher.name(id))}</bdi><button type="button" data-cancel="${esc(id)}" aria-label="Remove ${esc(dispatcher.name(id))} from floor ${f}">×</button></span>`).join(""));
   });
   const shabbat = s.mode === "shabbat";
   document.querySelectorAll("#keypad button").forEach((b) => {
@@ -955,7 +979,7 @@ function renderPanels(s) {
 
   // controller column
   $("#display").textContent = `${s.currentFloor}${s.state === "moving_up" ? "▲" : s.state === "moving_down" ? "▼" : ""}`;
-  const modeText = shabbat ? `stops every floor (${sim.cfg.shabbatStopSeconds} s)` : "";
+  const modeText = shabbat ? `stops every floor (green ${app.greenSeconds} s + yellow ${app.yellowSeconds} s)` : "";
   $("#state-text").textContent = `${STATE_TEXT[s.state]}${modeText ? " · " + modeText : ""} · cycle ${s.cycle}`;
   const pill = $("#mode-pill");
   pill.className = `pill ${s.mode}`;
@@ -1031,6 +1055,7 @@ function frame(now) {
       const h = Math.min(0.05, left);
       simTime += h;
       sim.step(simTime);
+      if (dispatcher.inView.size && !sim.yellow()) dispatcher.recogniseInView();  // the light turned red
       if (scenarioRun) checkScenario();
       left -= h;
     }
@@ -1058,15 +1083,15 @@ $("#pause").addEventListener("click", () => { paused = !paused; $("#pause").text
 $("#reset").addEventListener("click", () => { resetSim(); renderScenarioEditor(); toast("Simulation reset. Your people list is kept."); });
 $("#yellow-seconds").addEventListener("change", (ev) => {
   app.yellowSeconds = Number(ev.target.value);
-  sim.cfg.shabbatWarningSeconds = app.yellowSeconds;  // applies at once
+  sim.cfg.shabbatWarningSeconds = app.yellowSeconds;  // the light: at once
+  sim.cfg.doorOpenSeconds = sim.cfg.shabbatStopSeconds = stopSeconds();  // the stop: from the next one
   logActivity(`Yellow light <b>${app.yellowSeconds} s</b> before the doors close`);
   save();
 });
-$("#door-seconds").addEventListener("change", (ev) => {
-  app.doorSeconds = Number(ev.target.value);
-  sim.cfg.doorOpenSeconds = app.doorSeconds;  // read at each stop: applies from the next one
-  sim.cfg.shabbatStopSeconds = app.doorSeconds;
-  logActivity(`Doors open <b>${app.doorSeconds} s</b> from the next stop`);
+$("#green-seconds").addEventListener("change", (ev) => {
+  app.greenSeconds = Number(ev.target.value);
+  sim.cfg.doorOpenSeconds = sim.cfg.shabbatStopSeconds = stopSeconds();  // read at each stop: from the next one
+  logActivity(`Green <b>${app.greenSeconds} s</b> from the next stop`);
   save();
 });
 $("#top-floor").addEventListener("change", (ev) => { app.topFloor = Number(ev.target.value); save(); resetSim(); renderScenarioEditor(); toast(`Building now has floors 0 to ${app.topFloor}. Simulation reset.`); });
@@ -1100,16 +1125,6 @@ $("#place-form").addEventListener("submit", (ev) => {
   const id = $("#place-who").value;
   if (!id) { toast("Everyone is already waiting or riding."); return; }
   attempt(() => dispatcher.addWaiting(Number($("#place-floor").value), id));
-});
-$("#random5").addEventListener("click", () => {
-  const free = app.people.filter((p) => { const w = dispatcher.where.get(p.id); return !w || w.state === "at_floor"; })
-    .sort(() => Math.random() - 0.5).slice(0, 5);
-  if (!free.length) { toast("Everyone is already waiting or riding."); return; }
-  for (const p of free) {
-    for (let i = 0; i < 4; i++) {  // a random floor can be their own destination
-      try { dispatcher.addWaiting(Math.floor(Math.random() * (app.topFloor + 1)), p.id); break; } catch (e) { /* try another floor */ }
-    }
-  }
 });
 $("#clear-waiting").addEventListener("click", () => {
   const n = dispatcher.clear();
