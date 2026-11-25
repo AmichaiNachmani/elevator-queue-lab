@@ -934,7 +934,8 @@ function renderPeople() {
   }
   const who = $("#place-who");
   const free = app.people.filter((p) => { const w = where.get(p.id); return !dispatcher.inView.has(p.id) && (!w || w.state === "at_floor"); });
-  const optHtml = free.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("") || `<option value="">Everyone is waiting or riding</option>`;
+  const byFloor = [...free].sort((a, b) => a.floor - b.floor || a.name.localeCompare(b.name));  // by home floor
+  const optHtml = byFloor.map((p) => `<option value="${esc(p.id)}">${esc(p.name)} (${p.floor})</option>`).join("") || `<option value="">Everyone is waiting or riding</option>`;
   if (who._html !== optHtml && document.activeElement !== who) { const v = who.value; who.innerHTML = optHtml; who._html = optHtml; if (free.some((p) => p.id === v)) who.value = v; }
 }
 
