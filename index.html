@@ -360,6 +360,7 @@ class Elevator {
     this.pending = new Set();  // normal mode: the buttons pressed
     this.direction = 0;
     this.target = null;
+    this.via = null;  // Shabbat: end floor to turn at without stopping, on the way to the target
     this.targetSource = "";
     this.targetReason = "";
     this.doorsOpenUntil = null;
@@ -391,6 +392,7 @@ class Elevator {
     this.shabbat = enabled;
     this.lastRead = null;
     this.readWrittenAt = null;
+    this.via = null;  // no turn without stopping outside Shabbat mode
     if (enabled) this.pending.clear();  // the system controller takes the buttons over into its queue
     else if (this.doorsOpenUntil === null && this.target !== null && !this.pending.has(this.target)) {
       this.pending.add(this.target);  // back to normal: finish the current move
@@ -406,6 +408,7 @@ class Elevator {
       state: this.state(),
       direction: dirName(direction),
       target: this.target,
+      via: this.via,
       nextTarget: this.nextTarget(),
       pending: [...this.pending].sort((a, b) => a - b),
       held: [],
@@ -436,13 +439,28 @@ class Elevator {
       this.selectTarget();
     }
     if (this.target === null) return;
+    let travel = dt / this.cfg.secondsPerFloor;
+    if (this.via !== null) {
+      const toEnd = this.via - this.position;
+      if (Math.abs(toEnd) > travel + EPS) {
+        this.position += toEnd > 0 ? travel : -travel;
+        travel = 0;
+      } else {
+        // The end floor: turn without stopping and go straight on to the target.
+        travel = Math.max(0, travel - Math.abs(toEnd));
+        this.position = this.via;
+        this.via = null;
+        this.direction = this.target > this.position ? 1 : -1;
+        if (this.direction === 1 && this.lastMove === -1) this.cycle += 1;  // turned from down to up
+        this.lastMove = this.direction;
+      }
+    }
     const distance = this.target - this.position;
-    const travel = dt / this.cfg.secondsPerFloor;
     if (Math.abs(distance) <= travel + EPS) {
       const arrived = this.target;
       this.arrive(arrived, now);
       this.onStop(arrived);
-    } else {
+    } else if (travel > 0) {
       this.position += distance > 0 ? travel : -travel;
     }
   }
@@ -462,13 +480,16 @@ class Elevator {
       const limit = this.cfg.shabbatStopSeconds;
       const fresh = age <= limit + EPS;
       const follow = fresh && command.floor !== pyRound(this.position);
+      const via = command.via != null && command.via !== pyRound(this.position) ? command.via : null;
       const verdict = follow ? `written ${age.toFixed(1)} s before the doors closed, within the ${limit} s they were open`
         : !fresh ? `written ${age.toFixed(1)} s before the doors closed, more than the ${limit} s they were open`
         : "it is the car's own floor";
-      this.lastRead = { floor: command.floor, writtenAt: command.writtenAt, readAt: now, age, limit, followed: follow, reason: verdict };
+      this.lastRead = { floor: command.floor, via: command.via ?? null, writtenAt: command.writtenAt, readAt: now, age, limit, followed: follow, reason: verdict };
       if (follow) {
-        this.direction = command.floor > this.position ? 1 : -1;
-        this.setTarget(command.floor, "system command", `system command ${command.floor}: ${verdict}`);
+        this.via = via;
+        this.direction = (via ?? command.floor) > this.position ? 1 : -1;
+        const turn = via !== null ? ` via ${via} (turning there without stopping)` : "";
+        this.setTarget(command.floor, "system command", `system command ${command.floor}${turn}: ${verdict}`);
         return;
       }
       ignored = `; ignored system command ${command.floor} (${verdict})`;
@@ -488,7 +509,8 @@ class Elevator {
     this.target = floor;
     this.targetSource = source;
     this.targetReason = reason;
-    const d = floor > this.position ? 1 : floor < this.position ? -1 : 0;
+    const heading = this.via ?? floor;
+    const d = heading > this.position ? 1 : heading < this.position ? -1 : 0;
     if (d === 1 && this.lastMove === -1) this.cycle += 1;  // turned from down to up: a new cycle
     if (d) this.lastMove = d;
     this.decisions.push({ t: this.now, by: "elevator", picked: floor, reason, position: this.position, direction: dirName(d), queue: this.plan().map((s) => s.floor) });
@@ -513,7 +535,8 @@ class Elevator {
   nextTarget() {
     const pos = this.position;
     if (this.doorsOpenUntil === null && this.target !== null) {
-      return { floor: this.target, direction: dirName(this.target > pos ? 1 : -1), source: this.targetSource, reason: this.targetReason, moving: true };
+      // The direction it arrives in: after the turn when it turns at an end floor first.
+      return { floor: this.target, direction: dirName(this.target > (this.via ?? pos) ? 1 : -1), source: this.targetSource, reason: this.targetReason, moving: true, via: this.via };
     }
     if (this.shabbat) {
       const step = this.sweepFrom(pyRound(pos), this.direction);
@@ -586,7 +609,8 @@ class Elevator {
   }
   doorsOpenAt(floor) { return this.doorsOpenUntil !== null && Math.abs(this.position - floor) <= EPS; }
   travelDirection() {
-    if (this.target !== null && Math.abs(this.target - this.position) > EPS) return this.target > this.position ? 1 : -1;
+    const heading = this.via ?? this.target;  // the turning floor first, if any
+    if (heading !== null && Math.abs(heading - this.position) > EPS) return heading > this.position ? 1 : -1;
     return this.direction;
   }
   checkFloor(floor) {
@@ -595,7 +619,7 @@ class Elevator {
   state() {
     if (this.doorsOpenUntil !== null) return "doors_open";
     if (this.target === null) return "idle";
-    return this.target > this.position ? "moving_up" : "moving_down";
+    return this.travelDirection() > 0 ? "moving_up" : "moving_down";
   }
 }
 
@@ -629,33 +653,34 @@ class ShabbatQueue {
     if (car.mode !== "shabbat" || !car.nextTarget) return;
     const target = car.nextTarget.floor;
     const direction = car.nextTarget.direction === "up" ? 1 : -1;
-    const [floor, reason] = this.extension(target, direction, car.position);
+    const position = car.nextTarget.via ?? car.position;  // already turning: as if at the end
+    const [floor, via, reason] = this.extension(target, direction, position);
     if (floor === null) {
       this.note = reason;  // nothing to write; a previous command stays as it is, with its old time
       return;
     }
     const current = this.register.read();
     this.note = null;
-    if (!force && current && current.floor === floor) return;
-    this.register.write({ floor, direction: dirName(direction), writtenAt: this.elevator.now, reason });
+    if (!force && current && current.floor === floor && current.via === via) return;
+    this.register.write({ floor, via, direction: dirName(via === null ? direction : -direction), writtenAt: this.elevator.now, reason });
     this.decide(car, floor, `command written: ${reason}; the elevator's next target is ${target} (${trigger})`);
   }
+  // [floor, turning floor or null, reason], or [null, null, why no command].
   extension(target, direction, position) {
-    if (!this.floors.size) return [null, "nothing queued"];
+    if (!this.floors.size) return [null, null, "nothing queued"];
     const floors = [...this.floors];
     const ahead = floors.filter((f) => (f - position) * direction > EPS && (f - target) * direction >= 0);
-    let best;
-    let reason;
-    if (ahead.length) {
-      best = ahead.reduce((a, b) => (Math.abs(b - position) < Math.abs(a - position) ? b : a));
-      reason = "nearest queued floor ahead";
-    } else {
-      best = direction > 0 ? this.elevator.cfg.maxFloor : this.elevator.cfg.minFloor;
-      reason = "queued floors behind: run to the end to turn sooner";
+    if (!ahead.length) {
+      // Only floors behind: run on to the end, turn there without stopping and come back to the first of them.
+      const end = direction > 0 ? this.elevator.cfg.maxFloor : this.elevator.cfg.minFloor;
+      const back = direction > 0 ? Math.max(...floors) : Math.min(...floors);
+      if (Math.abs(position - end) <= EPS || back === end) return [null, null, "the car is at the end of the shaft"];
+      return [back, end, `queued floors behind: ${dirName(direction)} to ${end} and back to ${back} without stopping`];
     }
-    if (best === target) return [null, `${best} is already the elevator's next target`];
-    if ((best - target) * direction < 0) return [null, "it would shorten the move"];
-    return [best, reason];
+    const best = ahead.reduce((a, b) => (Math.abs(b - position) < Math.abs(a - position) ? b : a));
+    if (best === target) return [null, null, `${best} is already the elevator's next target`];
+    if ((best - target) * direction < 0) return [null, null, "it would shorten the move"];
+    return [best, null, "nearest queued floor ahead"];
   }
   status(car) {
     const [plan, held] = this.plan(car);
@@ -667,9 +692,10 @@ class ShabbatQueue {
   // Pass 1: ahead of the car and not before its next target (a move is never shortened). Pass 2: the rest.
   plan(car) {
     if (!this.floors.size) return [[], []];
-    const pos = car.position;
+    const turning = car.nextTarget && car.nextTarget.via != null;  // as if already at the end, heading back
+    const pos = turning ? car.nextTarget.via : car.position;
     const floors = [...this.floors];
-    let direction = { up: 1, down: -1 }[car.direction] || 0;
+    let direction = turning ? (car.nextTarget.direction === "up" ? 1 : -1) : { up: 1, down: -1 }[car.direction] || 0;
     if (direction === 0) direction = floors.some((f) => f > pos) || !floors.some((f) => f < pos) ? 1 : -1;
     const target = car.nextTarget ? car.nextTarget.floor : null;
     const reachable = (f) => (f - pos) * direction > EPS && (target === null || (f - target) * direction >= 0);
@@ -991,10 +1017,10 @@ function renderPanels(s) {
   const SOURCE = { sweep: "own sweep", "system command": "system command", buttons: "buttons" };
   const read = s.lastRead;
   const readLine = shabbat && read
-    ? `<div class="ctl-sub">Last read at ${fmtT(read.readAt)}: ${read.followed ? `<span class="yes">followed</span>` : `<span class="no">ignored</span>`} command <b>${read.floor}</b> written at ${fmtT(read.writtenAt)} (${esc(read.reason)})</div>`
+    ? `<div class="ctl-sub">Last read at ${fmtT(read.readAt)}: ${read.followed ? `<span class="yes">followed</span>` : `<span class="no">ignored</span>`} command <b>${read.floor}</b>${read.via != null ? ` via ${read.via}` : ""} written at ${fmtT(read.writtenAt)} (${esc(read.reason)})</div>`
     : "";
   setHTML($("#elev-next"), `<div class="ctl-line"><span class="ctl-name">Elevator controller</span> ${nxt
-    ? `${nxt.moving ? "target" : "next target"} <b>${nxt.floor} ${nxt.direction ? ARROW[nxt.direction] : ""}</b> <span class="pill">${SOURCE[nxt.source] || esc(nxt.source)}</span> <span class="muted">${esc(nxt.reason)}</span>`
+    ? `${nxt.moving ? "target" : "next target"} <b>${nxt.floor} ${nxt.direction ? ARROW[nxt.direction] : ""}</b>${nxt.via != null ? ` <span class="pill" title="Turns at ${nxt.via} without stopping or opening the doors">via ${nxt.via} ↩</span>` : ""} <span class="pill">${SOURCE[nxt.source] || esc(nxt.source)}</span> <span class="muted">${esc(nxt.reason)}</span>`
     : `<span class="muted">no target</span>`}</div>${readLine}`);
   // System controller: the next-target command (Shabbat mode), with the time it was written.
   const cmd = s.command;
@@ -1010,7 +1036,7 @@ function renderPanels(s) {
       : `<span class="no">written while the car moves: too old by its next stop</span>`;
     const valid = !!(check && check.willFollow);
     const note = s.commandNote ? `<div class="ctl-sub">No new command (${esc(s.commandNote)}); this one stays with its old time.</div>` : "";
-    sys = `command <b>${cmd.floor} ${ARROW[cmd.direction] || ""}</b> <span class="cmd-time ${valid ? "valid" : "stale"}" title="${valid ? "Valid: the elevator will follow it when its doors close" : "Not valid: the elevator will not follow it"}">written at ${fmtT(cmd.writtenAt)}</span> ${verdict}<div class="ctl-sub">${esc(cmd.reason)}</div>${note}`;
+    sys = `command <b>${cmd.floor} ${ARROW[cmd.direction] || ""}</b>${cmd.via != null ? ` <span class="pill" title="Turn at ${cmd.via} without stopping, then straight on to ${cmd.floor}">via ${cmd.via} ↩</span>` : ""} <span class="cmd-time ${valid ? "valid" : "stale"}" title="${valid ? "Valid: the elevator will follow it when its doors close" : "Not valid: the elevator will not follow it"}">written at ${fmtT(cmd.writtenAt)}</span> ${verdict}<div class="ctl-sub">${esc(cmd.reason)}</div>${note}`;
   } else {
     sys = `no command <span class="muted">(${esc(s.commandNote || "nothing queued")}): the car goes on by itself</span>`;
   }
